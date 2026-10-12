@@ -161,33 +161,65 @@ async def test_checkpoint_db_sqlite(tmp_path):
     from agenticrag.schemas import RouteDecision
 
     db_file = str(tmp_path / "test_checkpoints.sqlite")
-    conn = aiosqlite.connect(db_file)
-    saver = AsyncSqliteSaver(conn)
 
-    agent = create_agent(checkpointer=saver)
-    assert agent is not None
+    # Use async with to ensure the connection is properly opened and closed
+    async with aiosqlite.connect(db_file) as conn:
+        saver = AsyncSqliteSaver(conn)
+        agent = create_agent(checkpointer=saver)
+        assert agent is not None
 
-    with (
-        patch("agenticrag.nodes.get_router_llm") as mock_router,
-        patch("agenticrag.nodes.get_llm") as mock_llm,
-    ):
-        mock_router.return_value.ainvoke = AsyncMock(return_value=RouteDecision(route="direct"))
-        mock_llm.return_value.ainvoke = AsyncMock(
-            return_value=AIMessage(content="Hello! Support answer saved to sqlite.")
-        )
+        with (
+            patch("agenticrag.nodes.get_router_llm") as mock_router,
+            patch("agenticrag.nodes.get_llm") as mock_llm,
+        ):
+            mock_router.return_value.ainvoke = AsyncMock(return_value=RouteDecision(route="direct"))
+            mock_llm.return_value.ainvoke = AsyncMock(
+                return_value=AIMessage(content="Hello! Support answer saved to sqlite.")
+            )
 
-        config = {"configurable": {"thread_id": "test-sqlite-thread-1"}}
-        result = await agent.ainvoke(
-            {"messages": [HumanMessage(content="Hello from sqlite test")]}, config=config
-        )
-        assert result["source_used"] == "direct"
-        assert "sqlite" in str(result["messages"][-1].content)
+            config = {"configurable": {"thread_id": "test-sqlite-thread-1"}}
+            result = await agent.ainvoke(
+                {"messages": [HumanMessage(content="Hello from sqlite test")]}, config=config
+            )
+            assert result["source_used"] == "direct"
+            assert "sqlite" in str(result["messages"][-1].content)
 
-        # Verify state was persisted and can be retrieved asynchronously
-        state = await agent.aget_state(config)
-        assert len(state.values["messages"]) == 2
+            # Verify state was persisted and can be retrieved asynchronously
+            state = await agent.aget_state(config)
+            assert len(state.values["messages"]) == 2
 
-    await conn.close()
+
+@pytest.mark.asyncio
+async def test_checkpoint_db_sqlite_persistence_across_sessions(tmp_path):
+    """Messages persisted in SQLite survive agent re-instantiation (simulating restart)."""
+    import aiosqlite
+    from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
+
+    from agenticrag.schemas import RouteDecision
+
+    db_file = str(tmp_path / "persist_checkpoints.sqlite")
+    thread_config = {"configurable": {"thread_id": "persist-thread-abc"}}
+
+    # Session 1: write a message
+    async with aiosqlite.connect(db_file) as conn:
+        agent = create_agent(checkpointer=AsyncSqliteSaver(conn))
+        with (
+            patch("agenticrag.nodes.get_router_llm") as mock_router,
+            patch("agenticrag.nodes.get_llm") as mock_llm,
+        ):
+            mock_router.return_value.ainvoke = AsyncMock(return_value=RouteDecision(route="direct"))
+            mock_llm.return_value.ainvoke = AsyncMock(
+                return_value=AIMessage(content="Session 1 reply.")
+            )
+            await agent.ainvoke(
+                {"messages": [HumanMessage(content="Session 1 message")]}, config=thread_config
+            )
+
+    # Session 2: open same DB file, state should still be there
+    async with aiosqlite.connect(db_file) as conn2:
+        agent2 = create_agent(checkpointer=AsyncSqliteSaver(conn2))
+        state = await agent2.aget_state(thread_config)
+        assert len(state.values["messages"]) >= 2  # human + ai from session 1
 
 
 def test_retriever_backoff_on_failure():

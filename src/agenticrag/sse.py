@@ -7,7 +7,6 @@ from typing import Any
 from langchain_core.messages import HumanMessage
 from starlette.requests import Request
 
-from agenticrag.graph import get_agent_app
 from agenticrag.node_meta import get_node_status_message, is_generation_node
 
 logger = logging.getLogger(__name__)
@@ -21,12 +20,15 @@ def sse(event: dict) -> str:
 async def stream_agent_generator(
     message: str,
     thread_id: str,
-    agent_app: Any = None,
+    agent_app: Any,
     request: Request | None = None,
 ) -> AsyncGenerator[str, None]:
     """Generates Server-Sent Events asynchronously with client disconnect detection."""
     if agent_app is None:
-        agent_app = get_agent_app()
+        raise ValueError(
+            "agent_app must be provided to stream_agent_generator. "
+            "Pass app.state.agent_app from the FastAPI lifespan."
+        )
 
     config = {"configurable": {"thread_id": thread_id}}
     input_data = {"messages": [HumanMessage(content=message)]}

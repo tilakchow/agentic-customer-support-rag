@@ -104,7 +104,7 @@ def test_validate_runtime_keys_smoke():
 
 
 def test_compiled_agent_smoke():
-    from agenticrag.graph import get_agent_app
+    from agenticrag.graph import create_agent
 
-    app = get_agent_app()
+    app = create_agent()
     assert app is not None

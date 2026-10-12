@@ -2,7 +2,6 @@ from typing import Any
 
 from langgraph.graph import END, START, StateGraph
 
-from agenticrag.config import get_settings
 from agenticrag.node_meta import NodeName
 from agenticrag.nodes import (
     answer_insufficient,
@@ -21,10 +20,14 @@ from agenticrag.nodes import (
 from agenticrag.routing import route_after_router
 from agenticrag.state import AgentState
 
-_compiled_agent = None
-
 
 def create_agent(checkpointer: Any = None):
+    """Compile and return the LangGraph agent.
+
+    ``checkpointer`` must be provided explicitly when persistence is required.
+    If *None*, a fresh in-memory :class:`~langgraph.checkpoint.memory.MemorySaver`
+    is used (suitable only for development / testing).
+    """
     workflow = StateGraph(AgentState)
 
     # Add Nodes using NodeName enum
@@ -80,37 +83,9 @@ def create_agent(checkpointer: Any = None):
     workflow.add_edge(NodeName.DIRECT_ANSWER.value, END)
     workflow.add_edge(NodeName.ANSWER_INSUFFICIENT.value, END)
 
-    settings = get_settings()
-    if checkpointer is not None:
-        return workflow.compile(checkpointer=checkpointer)
+    if checkpointer is None:
+        from langgraph.checkpoint.memory import MemorySaver
 
-    if settings.checkpoint_db:
-        import asyncio
+        checkpointer = MemorySaver()
 
-        try:
-            asyncio.get_running_loop()
-            has_loop = True
-        except RuntimeError:
-            has_loop = False
-
-        if has_loop:
-            import aiosqlite
-            from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
-
-            conn = aiosqlite.connect(settings.checkpoint_db)
-            checkpointer = AsyncSqliteSaver(conn)
-            return workflow.compile(checkpointer=checkpointer)
-
-    # In-memory checkpointer (dev-only or when loop is not yet running)
-    from langgraph.checkpoint.memory import MemorySaver
-
-    checkpointer = MemorySaver()
     return workflow.compile(checkpointer=checkpointer)
-
-
-def get_agent_app():
-    """Lazy getter for compiled agent graph."""
-    global _compiled_agent
-    if _compiled_agent is None:
-        _compiled_agent = create_agent()
-    return _compiled_agent

@@ -16,7 +16,7 @@ from agenticrag.auth import verify_api_key
 from agenticrag.clients import get_retriever
 from agenticrag.config import get_settings
 from agenticrag.constants import DATASET_NAME, EMBEDDING_DIM, KB_SAMPLE_SIZE, RETRIEVER_K
-from agenticrag.graph import create_agent, get_agent_app
+from agenticrag.graph import create_agent
 from agenticrag.models import ChatRequest, ChatResponse, KBSearchRequest
 from agenticrag.sse import stream_agent_generator
 
@@ -60,23 +60,24 @@ async def lifespan(app: FastAPI):
         )
     settings.validate_runtime_keys(strict=False)
 
-    # Pre-compile the agent graph on startup (with AsyncSqliteSaver if configured)
+    # Build the correct checkpointer and compile the agent graph ONCE at startup.
+    # The AsyncSqliteSaver connection is managed here and closed cleanly on shutdown.
     if settings.checkpoint_db:
         import aiosqlite
         from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
-        conn = aiosqlite.connect(settings.checkpoint_db)
-        checkpointer = AsyncSqliteSaver(conn)
-        app.state.checkpoint_conn = conn
-        app.state.agent_app = create_agent(checkpointer=checkpointer)
-    else:
-        app.state.agent_app = get_agent_app()
+        async with aiosqlite.connect(settings.checkpoint_db) as conn:
+            checkpointer = AsyncSqliteSaver(conn)
+            app.state.agent_app = create_agent(checkpointer=checkpointer)
 
-    logger.info("Agentic-RAG backend startup complete.")
-    yield
-    if hasattr(app.state, "checkpoint_conn"):
-        await app.state.checkpoint_conn.close()
-    logger.info("Agentic-RAG backend shutdown complete.")
+            logger.info("Agentic-RAG backend startup complete (SQLite checkpointer: %s).", settings.checkpoint_db)
+            yield
+            logger.info("Agentic-RAG backend shutdown complete (SQLite connection closed).")
+    else:
+        app.state.agent_app = create_agent()
+        logger.info("Agentic-RAG backend startup complete (in-memory checkpointer).")
+        yield
+        logger.info("Agentic-RAG backend shutdown complete.")
 
 
 # Initialize FastAPI application with lifespan handler
@@ -115,8 +116,19 @@ app.add_middleware(LazyCORSMiddleware)  # type: ignore[arg-type]
 
 
 def get_current_agent():
-    """Retrieve compiled agent graph from application state or lazy singleton."""
-    return getattr(app.state, "agent_app", None) or get_agent_app()
+    """Retrieve compiled agent graph from application state.
+
+    Raises RuntimeError if called before the lifespan has initialised the app
+    (e.g. in a test that bypasses the lifespan).  Tests that need the agent
+    should supply their own via ``monkeypatch``.
+    """
+    agent = getattr(app.state, "agent_app", None)
+    if agent is None:
+        raise RuntimeError(
+            "Agent application is not initialised. "
+            "Ensure the FastAPI lifespan has started before calling this function."
+        )
+    return agent
 
 
 def clean_thread_id(raw_thread_id: str | None) -> str:
