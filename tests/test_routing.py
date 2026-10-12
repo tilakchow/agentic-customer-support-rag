@@ -108,3 +108,61 @@ def test_compiled_agent_smoke():
 
     app = create_agent()
     assert app is not None
+
+
+def test_get_latest_question_edge_cases():
+    """Empty state or non-human messages gracefully return empty string."""
+    assert get_latest_question({}) == ""
+    assert get_latest_question({"messages": []}) == ""
+    assert get_latest_question({"messages": [AIMessage(content="Hello!")]}) == ""
+
+    # Tuple representation ('human', 'message')
+    assert get_latest_question({"messages": [("human", "Help me")]}) == "Help me"
+
+    # Custom object with type="human"
+    class CustomHumanMsg:
+        type = "human"
+        content = "My custom inquiry"
+
+    assert get_latest_question({"messages": [CustomHumanMsg()]}) == "My custom inquiry"
+
+
+def test_get_conversation_history_edge_cases():
+    """Empty state, single message, and limit param handling in conversation history."""
+    assert get_conversation_history({}) == "No previous conversation."
+    assert get_conversation_history({"messages": []}) == "No previous conversation."
+    assert (
+        get_conversation_history({"messages": [HumanMessage(content="First")]})
+        == "No previous conversation."
+    )
+
+    state = {
+        "messages": [
+            HumanMessage(content="1"),
+            AIMessage(content="2"),
+            HumanMessage(content="3"),
+            AIMessage(content="4"),
+            HumanMessage(content="5"),
+        ]
+    }
+    # Limited to 2 prior turns
+    limited_hist = get_conversation_history(state, limit=2)
+    assert "User: 3" in limited_hist
+    assert "Assistant: 4" in limited_hist
+    assert "User: 1" not in limited_hist
+
+
+def test_is_internal_contact_query():
+    from agenticrag.routing import is_internal_contact_query
+
+    assert is_internal_contact_query("What is your customer service number?") is True
+    assert is_internal_contact_query("Can I have the toll free helpline?") is True
+    assert is_internal_contact_query("What is the return window for laptops?") is False
+
+
+def test_is_proprietary_policy_query():
+    from agenticrag.routing import is_proprietary_policy_query
+
+    assert is_proprietary_policy_query("What is your refund policy?") is True
+    assert is_proprietary_policy_query("Is there a 2-year warranty?") is True
+    assert is_proprietary_policy_query("How do I reset my password?") is False

@@ -3,7 +3,6 @@
 import hashlib
 import logging
 
-from datasets import load_dataset
 from langchain_core.documents import Document
 from langchain_pinecone import PineconeVectorStore
 from langchain_text_splitters import RecursiveCharacterTextSplitter
@@ -28,6 +27,16 @@ def run_ingestion() -> None:
         )
         logger.error(error_msg)
         raise RuntimeError(error_msg)
+
+    try:
+        from datasets import load_dataset
+    except ImportError as e:
+        error_msg = (
+            "The 'datasets' library is required to run the ingestion pipeline. "
+            "Please install it with: uv pip install 'agenticrag[ingest]'"
+        )
+        logger.error(error_msg)
+        raise RuntimeError(error_msg) from e
 
     logger.info("Fetching dataset '%s' from Hugging Face...", DATASET_NAME)
     dataset = load_dataset(DATASET_NAME, split="train")
