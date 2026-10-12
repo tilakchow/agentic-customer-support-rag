@@ -217,10 +217,29 @@ def grade_kb_evidence(state: AgentState) -> Dict[str, Any]:
     return {"kb_grade": grade.grade}
 
 
-def decide_after_kb_grade(state: AgentState) -> Literal["generate_from_kb", "search_web"]:
-    """Conditional edge decision: proceeds to KB synthesis if grade is good, else falls back to web search."""
+def is_internal_contact_query(query: str) -> bool:
+    """Detects if query asks for internal company contact channels (phone, hotline, email)."""
+    q = query.lower()
+    contact_keywords = [
+        "phone number", "customer service number", "customer support number",
+        "toll free", "hotline", "telephone", "call you", "call support",
+        "support phone", "helpdesk number", "contact number", "call center",
+        "direct number", "helpline", "support number"
+    ]
+    return any(kw in q for kw in contact_keywords)
+
+
+def decide_after_kb_grade(state: AgentState) -> Literal["generate_from_kb", "search_web", "answer_insufficient"]:
+    """Conditional edge decision: proceeds to KB synthesis if grade is good, else falls back to web search or insufficient notice."""
     if state.get("kb_grade") == "good":
         return NodeName.GENERATE_FROM_KB.value
+
+    # Prevent searching the open web for proprietary contact numbers/channels
+    question = get_latest_question(state)
+    if is_internal_contact_query(question):
+        logger.info("[Routing] Contact inquiry without KB evidence. Skipping web search to prevent external contact hallucination.")
+        return NodeName.ANSWER_INSUFFICIENT.value
+
     return NodeName.SEARCH_WEB.value
 
 

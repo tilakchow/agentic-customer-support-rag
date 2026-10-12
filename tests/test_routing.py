@@ -38,6 +38,15 @@ def test_decide_after_kb_grade_weak():
     assert decide_after_kb_grade(state) == NodeName.SEARCH_WEB.value
 
 
+def test_decide_after_kb_grade_weak_contact_number():
+    # When user asks for a phone number and KB doesn't have it, do NOT search the open web!
+    state = {
+        "kb_grade": "weak",
+        "messages": [HumanMessage(content="can i know the customer service number !")]
+    }
+    assert decide_after_kb_grade(state) == NodeName.ANSWER_INSUFFICIENT.value
+
+
 def test_decide_after_web_grade_failure():
     # If search failed, immediately route to answer_insufficient without retrying
     state = {"web_search_failed": True, "web_grade": "weak", "retry_count": 0}

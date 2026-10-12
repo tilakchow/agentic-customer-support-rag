@@ -48,6 +48,7 @@ def create_agent():
         {
             NodeName.GENERATE_FROM_KB.value: NodeName.GENERATE_FROM_KB.value,
             NodeName.SEARCH_WEB.value: NodeName.SEARCH_WEB.value,
+            NodeName.ANSWER_INSUFFICIENT.value: NodeName.ANSWER_INSUFFICIENT.value,
         }
     )
 
