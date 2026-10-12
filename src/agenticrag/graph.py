@@ -3,9 +3,8 @@ from typing import Any
 from langgraph.graph import END, START, StateGraph
 
 from agenticrag.config import get_settings
+from agenticrag.node_meta import NodeName
 from agenticrag.nodes import (
-    AgentState,
-    NodeName,
     answer_insufficient,
     decide_after_kb_grade,
     decide_after_web_grade,
@@ -16,10 +15,11 @@ from agenticrag.nodes import (
     grade_web_evidence,
     retrieve_kb,
     rewrite_query,
-    route_after_router,
     route_question,
     search_web,
 )
+from agenticrag.routing import route_after_router
+from agenticrag.state import AgentState
 
 _compiled_agent = None
 

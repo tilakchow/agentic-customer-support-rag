@@ -46,6 +46,7 @@ ingest = [
 
 [package.dev-dependencies]
 dev = [
+    { name = "aiosqlite" },
     { name = "httpx" },
     { name = "mypy" },
     { name = "pytest" },
@@ -78,6 +79,7 @@ provides-extras = ["ingest"]
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "aiosqlite", specifier = ">=0.20.0" },
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "mypy", specifier = ">=1.10.0" },
     { name = "pytest", specifier = ">=8.0.0" },

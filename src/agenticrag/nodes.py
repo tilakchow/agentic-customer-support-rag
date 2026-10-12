@@ -17,12 +17,6 @@ from agenticrag.clients import (
 )
 from agenticrag.config import get_settings
 from agenticrag.constants import RETRIEVER_K
-from agenticrag.node_meta import (
-    NODE_METADATA,
-    NodeName,
-    get_node_status_message,
-    is_generation_node,
-)
 from agenticrag.prompts import (
     CUSTOMER_SUPPORT_SYSTEM_PROMPT,
     DIRECT_ANSWER_PROMPT_TEMPLATE,
@@ -47,9 +41,6 @@ from agenticrag.routing import (
 from agenticrag.routing import (
     get_conversation_history,
     get_latest_question,
-    is_internal_contact_query,
-    is_proprietary_policy_query,
-    route_after_router,
 )
 from agenticrag.state import AgentState
 
@@ -69,32 +60,6 @@ def decide_after_web_grade(
     """Conditional edge decision: delegates to routing logic using local settings."""
     return _routing_decide_after_web_grade(state, settings=get_settings())
 
-
-# Re-export state, routing, and metadata symbols for backward compatibility
-__all__ = [
-    "AgentState",
-    "NodeName",
-    "NODE_METADATA",
-    "get_node_status_message",
-    "is_generation_node",
-    "get_latest_question",
-    "get_conversation_history",
-    "is_internal_contact_query",
-    "is_proprietary_policy_query",
-    "route_after_router",
-    "decide_after_kb_grade",
-    "decide_after_web_grade",
-    "route_question",
-    "retrieve_kb",
-    "grade_kb_evidence",
-    "search_web",
-    "grade_web_evidence",
-    "rewrite_query",
-    "generate_from_kb",
-    "generate_from_web",
-    "direct_answer",
-    "answer_insufficient",
-]
 
 
 # --- Async Graph Execution Nodes ---
@@ -284,6 +249,11 @@ async def grade_web_evidence(state: AgentState) -> dict[str, Any]:
         return {"web_grade": "weak"}
 
 
+def _message_text(response: Any) -> str:
+    """Extracts plain text from an LLM response regardless of its type."""
+    return response.content if hasattr(response, "content") else str(response)
+
+
 async def rewrite_query(state: AgentState) -> dict[str, Any]:
     """Rewrites inquiry to optimize retrieval precision for subsequent searches."""
     question = get_latest_question(state)
@@ -291,9 +261,7 @@ async def rewrite_query(state: AgentState) -> dict[str, Any]:
     try:
         prompt = REWRITE_QUERY_PROMPT_TEMPLATE.format(question=question)
         response = await get_llm().ainvoke(prompt)
-        rewritten = (
-            response.content.strip() if hasattr(response, "content") else str(response).strip()
-        )
+        rewritten = _message_text(response).strip()
         logger.info("[Rewriter] Rewritten query: '%s' (retry: %d)", rewritten, retry_count)
         return {"current_query": rewritten, "retry_count": retry_count}
     except Exception as e:
@@ -310,7 +278,7 @@ async def _generate_support_message(
     """Executes LLM synthesis with error containment and graceful customer fallback."""
     try:
         response = await get_llm().ainvoke(prompt_or_messages)
-        content = response.content if hasattr(response, "content") else str(response)
+        content = _message_text(response)
         return {"messages": [AIMessage(content=str(content))], "source_used": source_used}
     except Exception as e:
         logger.error("[%s Error] LLM generation failed: %s", source_used, e, exc_info=True)
