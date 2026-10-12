@@ -27,7 +27,7 @@ jobs:
         run: uv sync --frozen
 
       - name: Run Pytest
-        run: uv run pytest tests/ || echo "No tests found yet, skipping..."
+        run: uv run pytest tests/ -v
 
   frontend-lint:
     runs-on: ubuntu-latest

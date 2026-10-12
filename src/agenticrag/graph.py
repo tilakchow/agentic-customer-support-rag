@@ -2,6 +2,7 @@ from langgraph.graph import StateGraph, START, END
 from langgraph.checkpoint.memory import MemorySaver
 
 from agenticrag.nodes import (
+    NodeName,
     AgentState,
     route_question, route_after_router,
     retrieve_kb, grade_kb_evidence, decide_after_kb_grade,
@@ -10,58 +11,72 @@ from agenticrag.nodes import (
     direct_answer, answer_insufficient
 )
 
+_compiled_agent = None
+
+
 def create_agent():
     workflow = StateGraph(AgentState)
 
-    # Add Nodes
-    workflow.add_node("route_question", route_question)
-    workflow.add_node("retrieve_kb", retrieve_kb)
-    workflow.add_node("grade_kb_evidence", grade_kb_evidence)
-    workflow.add_node("search_web", search_web)
-    workflow.add_node("grade_web_evidence", grade_web_evidence)
-    workflow.add_node("rewrite_query", rewrite_query)
-    workflow.add_node("generate_from_kb", generate_from_kb)
-    workflow.add_node("generate_from_web", generate_from_web)
-    workflow.add_node("direct_answer", direct_answer)
-    workflow.add_node("answer_insufficient", answer_insufficient)
+    # Add Nodes using NodeName enum
+    workflow.add_node(NodeName.ROUTE_QUESTION.value, route_question)
+    workflow.add_node(NodeName.RETRIEVE_KB.value, retrieve_kb)
+    workflow.add_node(NodeName.GRADE_KB_EVIDENCE.value, grade_kb_evidence)
+    workflow.add_node(NodeName.SEARCH_WEB.value, search_web)
+    workflow.add_node(NodeName.GRADE_WEB_EVIDENCE.value, grade_web_evidence)
+    workflow.add_node(NodeName.REWRITE_QUERY.value, rewrite_query)
+    workflow.add_node(NodeName.GENERATE_FROM_KB.value, generate_from_kb)
+    workflow.add_node(NodeName.GENERATE_FROM_WEB.value, generate_from_web)
+    workflow.add_node(NodeName.DIRECT_ANSWER.value, direct_answer)
+    workflow.add_node(NodeName.ANSWER_INSUFFICIENT.value, answer_insufficient)
 
     # Add Edges
-    workflow.add_edge(START, "route_question")
+    workflow.add_edge(START, NodeName.ROUTE_QUESTION.value)
 
     workflow.add_conditional_edges(
-        "route_question",
+        NodeName.ROUTE_QUESTION.value,
         route_after_router,
-        {"retrieve_kb": "retrieve_kb", "direct_answer": "direct_answer"}
-    )
-
-    workflow.add_edge("retrieve_kb", "grade_kb_evidence")
-    workflow.add_conditional_edges(
-        "grade_kb_evidence",
-        decide_after_kb_grade,
-        {"generate_from_kb": "generate_from_kb", "search_web": "search_web"}
-    )
-
-    workflow.add_edge("search_web", "grade_web_evidence")
-    workflow.add_conditional_edges(
-        "grade_web_evidence",
-        decide_after_web_grade,
         {
-            "generate_from_web": "generate_from_web",
-            "rewrite_query": "rewrite_query",
-            "answer_insufficient": "answer_insufficient",
+            NodeName.RETRIEVE_KB.value: NodeName.RETRIEVE_KB.value,
+            NodeName.DIRECT_ANSWER.value: NodeName.DIRECT_ANSWER.value,
         }
     )
 
-    workflow.add_edge("rewrite_query", "retrieve_kb")
-    
-    workflow.add_edge("generate_from_kb", END)
-    workflow.add_edge("generate_from_web", END)
-    workflow.add_edge("direct_answer", END)
-    workflow.add_edge("answer_insufficient", END)
+    workflow.add_edge(NodeName.RETRIEVE_KB.value, NodeName.GRADE_KB_EVIDENCE.value)
+    workflow.add_conditional_edges(
+        NodeName.GRADE_KB_EVIDENCE.value,
+        decide_after_kb_grade,
+        {
+            NodeName.GENERATE_FROM_KB.value: NodeName.GENERATE_FROM_KB.value,
+            NodeName.SEARCH_WEB.value: NodeName.SEARCH_WEB.value,
+        }
+    )
 
-    # Memory checkpointer to remember chat history!
-    memory = MemorySaver()
+    workflow.add_edge(NodeName.SEARCH_WEB.value, NodeName.GRADE_WEB_EVIDENCE.value)
+    workflow.add_conditional_edges(
+        NodeName.GRADE_WEB_EVIDENCE.value,
+        decide_after_web_grade,
+        {
+            NodeName.GENERATE_FROM_WEB.value: NodeName.GENERATE_FROM_WEB.value,
+            NodeName.REWRITE_QUERY.value: NodeName.REWRITE_QUERY.value,
+            NodeName.ANSWER_INSUFFICIENT.value: NodeName.ANSWER_INSUFFICIENT.value,
+        }
+    )
+
+    workflow.add_edge(NodeName.REWRITE_QUERY.value, NodeName.RETRIEVE_KB.value)
     
-    # Compile the graph
-    app = workflow.compile(checkpointer=memory)
-    return app
+    workflow.add_edge(NodeName.GENERATE_FROM_KB.value, END)
+    workflow.add_edge(NodeName.GENERATE_FROM_WEB.value, END)
+    workflow.add_edge(NodeName.DIRECT_ANSWER.value, END)
+    workflow.add_edge(NodeName.ANSWER_INSUFFICIENT.value, END)
+
+    # Memory checkpointer to remember chat history
+    memory = MemorySaver()
+    return workflow.compile(checkpointer=memory)
+
+
+def get_agent_app():
+    """Lazy getter for compiled agent graph."""
+    global _compiled_agent
+    if _compiled_agent is None:
+        _compiled_agent = create_agent()
+    return _compiled_agent
