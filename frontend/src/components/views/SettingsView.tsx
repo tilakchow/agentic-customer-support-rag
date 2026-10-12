@@ -24,8 +24,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       await checkHealth()
       const latency = Date.now() - start
       setPingResult(`Connected successfully (${latency}ms latency)`)
-    } catch (err: any) {
-      setPingResult(`Connection failed: ${err.message}`)
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Unknown error"
+      setPingResult(`Connection failed: ${msg}`)
     } finally {
       setTestingPing(false)
     }

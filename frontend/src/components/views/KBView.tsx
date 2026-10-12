@@ -30,8 +30,9 @@ export const KBView: React.FC<KBViewProps> = ({ onAskInChat }) => {
     try {
       const data = await searchKB(searchQuery.trim())
       setSearchResults(data.results)
-    } catch (err: any) {
-      setError(err.message || "Failed to search Knowledge Base")
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Failed to search Knowledge Base"
+      setError(msg)
     } finally {
       setSearching(false)
     }

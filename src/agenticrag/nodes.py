@@ -1,6 +1,7 @@
+"""Core LangGraph nodes and decision-making logic for Agentic Customer Support RAG."""
+
 import concurrent.futures
 import logging
-from enum import StrEnum
 from typing import Annotated, Any, Literal
 
 from langchain_core.documents import Document
@@ -8,15 +9,19 @@ from langchain_core.messages import AIMessage, AnyMessage, HumanMessage, SystemM
 from langgraph.graph.message import add_messages
 from typing_extensions import TypedDict
 
-from agenticrag.config import (
-    MAX_RETRIES,
-    get_kb_grader_llm,
+from agenticrag.clients import (
+    get_grader_llm,
     get_llm,
     get_retriever,
     get_router_llm,
-    get_settings,
-    get_web_grader_llm,
     get_web_search,
+)
+from agenticrag.config import get_settings
+from agenticrag.node_meta import (
+    NODE_METADATA,
+    NodeName,
+    get_node_status_message,
+    is_generation_node,
 )
 from agenticrag.prompts import (
     CUSTOMER_SUPPORT_SYSTEM_PROMPT,
@@ -35,77 +40,31 @@ from agenticrag.prompts import (
 
 logger = logging.getLogger(__name__)
 
-
-# --- Shared Graph Node Enum & Metadata ---
-
-class NodeName(StrEnum):
-    """Enumeration of all node identifiers across the agent state graph."""
-    ROUTE_QUESTION = "route_question"
-    RETRIEVE_KB = "retrieve_kb"
-    GRADE_KB_EVIDENCE = "grade_kb_evidence"
-    SEARCH_WEB = "search_web"
-    GRADE_WEB_EVIDENCE = "grade_web_evidence"
-    REWRITE_QUERY = "rewrite_query"
-    GENERATE_FROM_KB = "generate_from_kb"
-    GENERATE_FROM_WEB = "generate_from_web"
-    DIRECT_ANSWER = "direct_answer"
-    ANSWER_INSUFFICIENT = "answer_insufficient"
-
-
-NODE_METADATA: dict[str, dict[str, Any]] = {
-    NodeName.ROUTE_QUESTION.value: {
-        "status_message": "Analyzing question & routing...",
-        "is_generation": False,
-    },
-    NodeName.RETRIEVE_KB.value: {
-        "status_message": "Searching private knowledge base...",
-        "is_generation": False,
-    },
-    NodeName.GRADE_KB_EVIDENCE.value: {
-        "status_message": "Evaluating knowledge base evidence quality...",
-        "is_generation": False,
-    },
-    NodeName.SEARCH_WEB.value: {
-        "status_message": "Searching real-time web with Tavily...",
-        "is_generation": False,
-    },
-    NodeName.GRADE_WEB_EVIDENCE.value: {
-        "status_message": "Evaluating web search evidence...",
-        "is_generation": False,
-    },
-    NodeName.REWRITE_QUERY.value: {
-        "status_message": "Refining search query for better precision...",
-        "is_generation": False,
-    },
-    NodeName.GENERATE_FROM_KB.value: {
-        "status_message": "Synthesizing answer from knowledge base...",
-        "is_generation": True,
-    },
-    NodeName.GENERATE_FROM_WEB.value: {
-        "status_message": "Synthesizing answer from web results...",
-        "is_generation": True,
-    },
-    NodeName.DIRECT_ANSWER.value: {
-        "status_message": "Formulating direct response...",
-        "is_generation": True,
-    },
-    NodeName.ANSWER_INSUFFICIENT.value: {
-        "status_message": "Assessing insufficient context...",
-        "is_generation": True,
-    },
-}
-
-
-def get_node_status_message(node_name: str) -> str:
-    """Derives a user-facing status message for a given graph node name."""
-    meta = NODE_METADATA.get(node_name)
-    return meta["status_message"] if meta else f"Executing {node_name}..."
-
-
-def is_generation_node(node_name: str) -> bool:
-    """Determines whether the given node streams final response tokens."""
-    meta = NODE_METADATA.get(node_name)
-    return meta["is_generation"] if meta else False
+# Re-export node presentation metadata for backward compatibility
+__all__ = [
+    "AgentState",
+    "NodeName",
+    "NODE_METADATA",
+    "get_node_status_message",
+    "is_generation_node",
+    "get_latest_question",
+    "get_conversation_history",
+    "route_question",
+    "route_after_router",
+    "retrieve_kb",
+    "grade_kb_evidence",
+    "is_internal_contact_query",
+    "is_proprietary_policy_query",
+    "decide_after_kb_grade",
+    "search_web",
+    "grade_web_evidence",
+    "decide_after_web_grade",
+    "rewrite_query",
+    "generate_from_kb",
+    "generate_from_web",
+    "direct_answer",
+    "answer_insufficient",
+]
 
 
 # --- State Definition ---
@@ -129,24 +88,27 @@ class AgentState(TypedDict):
 
 def get_latest_question(state: AgentState) -> str:
     """Extracts the most recent user inquiry from the state messages."""
-    messages = state.get("messages", [])
-    for msg in reversed(messages):
-        if isinstance(msg, HumanMessage):
-            return str(msg.content).strip()
+    for message in reversed(state.get("messages", [])):
+        if isinstance(message, HumanMessage):
+            content = message.content
+            return content if isinstance(content, str) else str(content)
+        if isinstance(message, tuple) and message[0] == "human":
+            return str(message[1])
+        if getattr(message, "type", None) == "human":
+            return str(getattr(message, "content", ""))
     return ""
 
 
-def get_conversation_history(state: AgentState, limit: int = 6) -> str:
-    """Formats a compact prior conversation history, excluding the current pending question."""
+def get_conversation_history(state: AgentState, limit: int | None = None) -> str:
+    """Extracts recent conversation turns prior to the active query."""
+    if limit is None:
+        limit = get_settings().max_thread_history
+
     messages = state.get("messages", [])
-    if not messages:
+    if len(messages) <= 1:
         return "No previous conversation."
 
-    # Exclude the very last human message to avoid duplicating the prompt inquiry
     prior_messages = messages[:-1]
-    if not prior_messages:
-        return "No previous conversation."
-
     history = []
     for msg in prior_messages[-limit:]:
         role = "User" if isinstance(msg, HumanMessage) else "Assistant"
@@ -230,7 +192,7 @@ def grade_kb_evidence(state: AgentState) -> dict[str, Any]:
             SystemMessage(content=KB_GRADER_SYSTEM_PROMPT),
             HumanMessage(content=KB_GRADER_HUMAN_TEMPLATE.format(question=question, context=context)),
         ]
-        grade = get_kb_grader_llm().invoke(messages)
+        grade = get_grader_llm().invoke(messages)
         logger.info("[KB Grader] Evidence grade: %s", grade.grade)
         return {"kb_grade": grade.grade}
     except Exception as e:
@@ -250,15 +212,35 @@ def is_internal_contact_query(query: str) -> bool:
     return any(kw in q for kw in contact_keywords)
 
 
+def is_proprietary_policy_query(query: str) -> bool:
+    """Detects inquiries regarding proprietary company policies to prevent external web hallucination."""
+    q = query.lower()
+    policy_keywords = [
+        "policy", "return policy", "refund policy", "cancellation policy",
+        "warranty policy", "exchange policy", "guarantee policy", "terms of service"
+    ]
+    return any(kw in q for kw in policy_keywords)
+
+
 def decide_after_kb_grade(state: AgentState) -> Literal["generate_from_kb", "search_web", "answer_insufficient"]:
     """Conditional edge decision: proceeds to KB synthesis if grade is good, else falls back to web search or insufficient notice."""
     if state.get("kb_grade") == "good":
         return NodeName.GENERATE_FROM_KB.value
 
+    settings = get_settings()
+    if not settings.web_fallback_enabled:
+        logger.info("[Routing] Web fallback disabled by configuration. Routing to answer_insufficient.")
+        return NodeName.ANSWER_INSUFFICIENT.value
+
     # Prevent searching the open web for proprietary contact numbers/channels
     question = get_latest_question(state)
     if is_internal_contact_query(question):
         logger.info("[Routing] Contact inquiry without KB evidence. Skipping web search to prevent external contact hallucination.")
+        return NodeName.ANSWER_INSUFFICIENT.value
+
+    # Prevent searching the open web for proprietary company policies
+    if is_proprietary_policy_query(question):
+        logger.info("[Routing] Proprietary policy inquiry without KB evidence. Skipping web search.")
         return NodeName.ANSWER_INSUFFICIENT.value
 
     return NodeName.SEARCH_WEB.value
@@ -305,7 +287,7 @@ def grade_web_evidence(state: AgentState) -> dict[str, Any]:
             SystemMessage(content=WEB_GRADER_SYSTEM_PROMPT),
             HumanMessage(content=WEB_GRADER_HUMAN_TEMPLATE.format(question=question, web_results=web_results)),
         ]
-        grade = get_web_grader_llm().invoke(messages)
+        grade = get_grader_llm().invoke(messages)
         logger.info("[Web Grader] Evidence grade: %s", grade.grade)
         return {"web_grade": grade.grade}
     except Exception as e:
@@ -321,7 +303,8 @@ def decide_after_web_grade(state: AgentState) -> Literal["generate_from_web", "r
 
     if state.get("web_grade") == "good":
         return NodeName.GENERATE_FROM_WEB.value
-    if state.get("retry_count", 0) < MAX_RETRIES:
+    max_retries = get_settings().max_retries
+    if state.get("retry_count", 0) < max_retries:
         return NodeName.REWRITE_QUERY.value
     return NodeName.ANSWER_INSUFFICIENT.value
 

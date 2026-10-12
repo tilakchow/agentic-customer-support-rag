@@ -157,7 +157,7 @@ Customer Inquiry:
 {question}
 
 Instructions:
-Rely strictly on the provided Knowledge Base context. If the customer asks for a phone number or specific contact method not present in the context, let them know it is not listed in your records and suggest contacting support via Live Chat or the website support portal.
+Rely strictly on the provided Knowledge Base context.
 """
 
 
@@ -184,10 +184,8 @@ Recent Conversation History:
 Customer Inquiry:
 {question}
 
-STRICT GUARDRAILS:
-1. Do NOT provide third-party telephone numbers, email addresses, or support hotlines (e.g. Phone.com, external directories) as our customer support channels.
-2. If the customer is asking for our direct phone number and our records do not contain it, state that an exact phone number is not listed in your records, and direct them to our website Live Chat or support ticket.
-3. Only use the web context for general factual or technical concepts, not for proprietary company policies or third-party phone numbers.
+Instructions:
+Synthesize a response grounded in the provided context and conversation history.
 """
 
 
@@ -204,7 +202,7 @@ Customer Message:
 INSUFFICIENT_EVIDENCE_PROMPT_TEMPLATE = """{system_prompt}
 
 Situation:
-The knowledge base and verified records did not contain sufficient information or exact details to answer the customer's specific question (e.g. specific direct telephone numbers, unlisted internal policies, or private records).
+The knowledge base and verified records did not contain sufficient information to answer the customer's specific question.
 
 Recent Conversation History:
 {history}
@@ -213,7 +211,7 @@ Customer Inquiry:
 {question}
 
 Instructions:
-1. Politely inform the customer that you don't have the specific detail (e.g. phone number or specific unlisted record) available in your internal database.
+1. Politely inform the customer that you don't have the specific detail available in your internal database.
 2. Guide them to our official support channels: let them know they can reach assistance via Live Chat on our website or submit a support ticket.
-3. Keep the tone helpful, professional, and empathetic. Do NOT make up any phone numbers or third-party details.
+3. Keep the tone helpful, professional, and empathetic.
 """

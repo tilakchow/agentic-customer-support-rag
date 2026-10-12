@@ -2,7 +2,7 @@
 
 import json
 
-from agenticrag.nodes import NodeName, get_node_status_message, is_generation_node
+from agenticrag.node_meta import NodeName, get_node_status_message, is_generation_node
 
 
 def test_status_event_contract():

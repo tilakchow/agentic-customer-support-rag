@@ -243,8 +243,9 @@ export function App() {
           },
         }
       )
-    } catch (err: any) {
-      setErrorMsg(err.message || "Failed to reach the agent. Please verify that FastAPI is running.")
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Failed to reach the agent. Please verify that FastAPI is running."
+      setErrorMsg(msg)
       setActiveNode(undefined)
       setMessages((prev) => prev.filter((msg) => msg.id !== assistantId || msg.content.length > 0))
     } finally {

@@ -123,15 +123,16 @@ def test_verify_api_key_auth(client, monkeypatch):
     """Verifies that when API_KEY is configured, requests require matching X-API-Key header."""
     from agenticrag.config import Settings
     fake_settings = Settings(api_key="secret-token-123")
-    monkeypatch.setattr(api_module, "get_settings", lambda: fake_settings)
+    monkeypatch.setattr("agenticrag.auth.get_settings", lambda: fake_settings)
+    monkeypatch.setattr("agenticrag.api.get_settings", lambda: fake_settings)
 
     # Missing API key -> 401
     res_missing = client.get("/kb/info")
     assert res_missing.status_code == 401
 
-    # Wrong API key -> 401
+    # Wrong API key -> 403
     res_wrong = client.get("/kb/info", headers={"X-API-Key": "wrong-token"})
-    assert res_wrong.status_code == 401
+    assert res_wrong.status_code == 403
 
     # Correct API key -> 200
     res_correct = client.get("/kb/info", headers={"X-API-Key": "secret-token-123"})

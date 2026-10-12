@@ -4,18 +4,16 @@ import hashlib
 import logging
 
 from datasets import load_dataset
-from dotenv import load_dotenv
 from langchain_core.documents import Document
 from langchain_pinecone import PineconeVectorStore
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from pinecone import Pinecone, ServerlessSpec
 
-from agenticrag.config import INDEX_NAME, NAMESPACE, get_embeddings, get_settings
+from agenticrag.clients import get_embeddings
+from agenticrag.config import get_settings
+from agenticrag.constants import DATASET_NAME, EMBEDDING_DIM
 
-load_dotenv()
 logger = logging.getLogger(__name__)
-
-DIMENSION = 384
 
 
 def run_ingestion() -> None:
@@ -31,11 +29,12 @@ def run_ingestion() -> None:
         logger.error(error_msg)
         raise RuntimeError(error_msg)
 
-    logger.info("Fetching dataset automatically from Hugging Face...")
-    dataset = load_dataset("bitext/Bitext-customer-support-llm-chatbot-training-dataset", split="train")
+    logger.info("Fetching dataset '%s' from Hugging Face...", DATASET_NAME)
+    dataset = load_dataset(DATASET_NAME, split="train")
 
-    # Sample data to avoid extreme upload times for initial indexing
-    sample_data = dataset.select(range(500))
+    # Sample data with configurable size and deterministic seed to avoid extreme indexing times
+    sample_size = min(len(dataset), settings.kb_sample_size)
+    sample_data = dataset.shuffle(seed=settings.kb_seed).select(range(sample_size))
 
     raw_docs = []
     for row in sample_data:
@@ -62,15 +61,18 @@ def run_ingestion() -> None:
         chunk_id = hashlib.sha256(unique_string.encode("utf-8")).hexdigest()[:32]
         chunk_ids.append(chunk_id)
 
-    logger.info("Connecting to Pinecone index: %s...", INDEX_NAME)
+    index_name = settings.index_name
+    namespace = settings.namespace
+
+    logger.info("Connecting to Pinecone index: %s...", index_name)
     pc = Pinecone(api_key=settings.pinecone_api_key)
     existing_indexes = [index_info["name"] for index_info in pc.list_indexes()]
 
-    if INDEX_NAME not in existing_indexes:
-        logger.info("Creating Pinecone index '%s' (dim=%d, cosine)...", INDEX_NAME, DIMENSION)
+    if index_name not in existing_indexes:
+        logger.info("Creating Pinecone index '%s' (dim=%d, cosine)...", index_name, EMBEDDING_DIM)
         pc.create_index(
-            name=INDEX_NAME,
-            dimension=DIMENSION,
+            name=index_name,
+            dimension=EMBEDDING_DIM,
             metric="cosine",
             spec=ServerlessSpec(cloud="aws", region="us-east-1"),
         )
@@ -78,12 +80,12 @@ def run_ingestion() -> None:
     # Share the exact same embedding model configuration used at runtime
     embeddings = get_embeddings()
 
-    logger.info("Upserting %d chunks with deterministic IDs to namespace '%s'...", len(chunks), NAMESPACE)
+    logger.info("Upserting %d chunks with deterministic IDs to namespace '%s'...", len(chunks), namespace)
     PineconeVectorStore.from_documents(
         documents=chunks,
         embedding=embeddings,
-        index_name=INDEX_NAME,
-        namespace=NAMESPACE,
+        index_name=index_name,
+        namespace=namespace,
         ids=chunk_ids
     )
 

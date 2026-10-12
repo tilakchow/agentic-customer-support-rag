@@ -1,7 +1,6 @@
 export interface ChatRequest {
   message: string
   thread_id?: string
-  stream?: boolean
 }
 
 export interface ChatResponse {

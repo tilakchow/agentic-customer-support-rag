@@ -3,8 +3,9 @@ from unittest.mock import MagicMock, patch
 from langchain_core.documents import Document
 from langchain_core.messages import HumanMessage
 
-from agenticrag.config import get_retriever
+from agenticrag.clients import get_retriever
 from agenticrag.nodes import (
+    decide_after_kb_grade,
     grade_kb_evidence,
     grade_web_evidence,
     retrieve_kb,
@@ -48,7 +49,7 @@ def test_grade_kb_evidence_fallback_on_exception():
         "messages": [HumanMessage(content="What is the shipping cost?")],
         "kb_docs": [Document(page_content="Free shipping over $50", metadata={"source": "faq"})],
     }
-    with patch("agenticrag.nodes.get_kb_grader_llm") as mock_grader:
+    with patch("agenticrag.nodes.get_grader_llm") as mock_grader:
         mock_grader.return_value.invoke.side_effect = TimeoutError("LLM call timed out")
         result = grade_kb_evidence(state)
         assert result["kb_grade"] == "weak"
@@ -60,7 +61,7 @@ def test_grade_web_evidence_fallback_on_exception():
         "web_results": "Item is in stock at local stores.",
         "web_search_failed": False,
     }
-    with patch("agenticrag.nodes.get_web_grader_llm") as mock_grader:
+    with patch("agenticrag.nodes.get_grader_llm") as mock_grader:
         mock_grader.return_value.invoke.side_effect = Exception("Service unavailable")
         result = grade_web_evidence(state)
         assert result["web_grade"] == "weak"
@@ -87,13 +88,31 @@ def test_search_web_failure_sets_flag():
         assert result["web_results"] == ""
 
 
+def test_decide_after_kb_grade_web_fallback_disabled():
+    state = {
+        "kb_grade": "weak",
+        "messages": [HumanMessage(content="What is the weather?")]
+    }
+    with patch("agenticrag.nodes.get_settings") as mock_settings:
+        mock_settings.return_value.web_fallback_enabled = False
+        assert decide_after_kb_grade(state) == "answer_insufficient"
+
+
+def test_decide_after_kb_grade_proprietary_policy_skips_web():
+    state = {
+        "kb_grade": "weak",
+        "messages": [HumanMessage(content="What is your return policy?")]
+    }
+    assert decide_after_kb_grade(state) == "answer_insufficient"
+
+
 def test_retriever_backoff_on_failure():
-    with patch("agenticrag.config.get_settings") as mock_settings:
+    with patch("agenticrag.clients.get_settings") as mock_settings:
         mock_settings.return_value.pinecone_api_key = "dummy-key"
         mock_settings.return_value.index_name = "test-index"
         mock_settings.return_value.namespace = "test-ns"
 
-        import agenticrag.config as cfg
+        import agenticrag.clients as cfg
         cfg._retriever_client = None
         cfg._last_retriever_failure_time = 0.0
 

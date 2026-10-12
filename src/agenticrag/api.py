@@ -1,52 +1,36 @@
-import hmac
-import json
+"""Hardened FastAPI application with rate limiting, async concurrency, and streaming."""
+
 import logging
 import re
 import uuid
-from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
-from fastapi import Depends, FastAPI, HTTPException, Request, Security
-from fastapi.middleware.cors import CORSMiddleware
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import StreamingResponse
-from fastapi.security import APIKeyHeader
 from langchain_core.messages import HumanMessage
-from pydantic import BaseModel, Field, field_validator
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
+from starlette.middleware.cors import CORSMiddleware
 
-from agenticrag.config import get_retriever, get_settings
+from agenticrag.auth import verify_api_key
+from agenticrag.clients import get_retriever
+from agenticrag.config import get_settings
 from agenticrag.constants import DATASET_NAME, EMBEDDING_DIM, KB_SAMPLE_SIZE, RETRIEVER_K
 from agenticrag.graph import get_agent_app
-from agenticrag.nodes import get_node_status_message, is_generation_node
+from agenticrag.models import ChatRequest, ChatResponse, KBSearchRequest
+from agenticrag.sse import stream_agent_generator
 
 logger = logging.getLogger(__name__)
 
-# --- Rate Limiter Setup ---
-limiter = Limiter(key_func=get_remote_address, default_limits=["60/minute"])
-
-# --- Optional API Key Authentication ---
-api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
-
-
-async def verify_api_key(api_key: str | None = Security(api_key_header)) -> str | None:
-    """Validates the API key if configured; unset API_KEY means public access."""
-    configured_key = get_settings().api_key
-    if configured_key:
-        if not api_key or not hmac.compare_digest(api_key, configured_key):
-            raise HTTPException(
-                status_code=401,
-                detail="Invalid or missing API key in 'X-API-Key' header."
-            )
-    return api_key
+# Initialize rate limiter with IP tracking
+limiter = Limiter(key_func=get_remote_address)
 
 
 # --- Application Lifespan Handler ---
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Initializes, validates dependencies, and pre-compiles graph at startup."""
-    logger.info("Initializing Agentic-RAG backend lifespan...")
+    """Initializes and cleans up state during application lifecycle."""
     settings = get_settings()
     if settings.require_api_key and not settings.api_key:
         raise RuntimeError("REQUIRE_API_KEY is true, but API_KEY is empty or not configured.")
@@ -71,14 +55,26 @@ app = FastAPI(
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
-# Configure CORS with strict explicit origins
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=get_settings().allowed_origins,
-    allow_credentials=True,
-    allow_methods=["GET", "POST", "OPTIONS"],
-    allow_headers=["*"],
-)
+
+# Lazy CORS Middleware to avoid importing/reading settings on module load
+class LazyCORSMiddleware(CORSMiddleware):
+    """CORS middleware that dynamically resolves allowed origins from settings per request."""
+    def __init__(self, inner_app, **kwargs):
+        super().__init__(
+            inner_app,
+            allow_origins=[],
+            allow_credentials=True,
+            allow_methods=["GET", "POST", "OPTIONS"],
+            allow_headers=["*"],
+            **kwargs,
+        )
+        self.preflight_explicit_allow_origin = True
+
+    def is_allowed_origin(self, origin: str) -> bool:
+        return origin in get_settings().allowed_origins
+
+
+app.add_middleware(LazyCORSMiddleware)
 
 
 def get_current_agent():
@@ -94,37 +90,6 @@ def clean_thread_id(raw_thread_id: str | None) -> str:
     # Restrict to safe slug characters (alphanumeric, hyphens, underscores)
     safe = re.sub(r"[^a-zA-Z0-9_\-]", "", cleaned)[:128]
     return safe or str(uuid.uuid4())
-
-
-class ChatRequest(BaseModel):
-    message: str = Field(
-        ...,
-        min_length=1,
-        max_length=1500,
-        description="User question or statement (max 1500 characters)"
-    )
-    thread_id: str | None = Field(
-        None,
-        description="Session/Thread identifier for conversation memory"
-    )
-    stream: bool | None = Field(
-        False,
-        description="Whether to stream the response as Server-Sent Events (SSE)"
-    )
-
-    @field_validator("message")
-    @classmethod
-    def validate_message_not_empty(cls, v: str) -> str:
-        stripped = v.strip()
-        if not stripped:
-            raise ValueError("Message cannot be empty or pure whitespace.")
-        return stripped
-
-
-class ChatResponse(BaseModel):
-    response: str = Field(..., description="Assistant's response text")
-    thread_id: str = Field(..., description="Active thread ID for conversational continuity")
-    source_used: str | None = Field(None, description="Data source used (private_kb, web_search, direct, etc.)")
 
 
 @app.get("/")
@@ -159,16 +124,11 @@ def kb_info_endpoint(
         "namespace": settings.namespace,
         "embedding_model": settings.embedding_model,
         "dimension": EMBEDDING_DIM,
-        "dataset": DATASET_NAME,
         "sample_size": KB_SAMPLE_SIZE,
-        "primary_intent": "cancel_order & support policies",
         "retriever_k": RETRIEVER_K,
-        "status": "connected" if retriever_instance is not None else "disconnected"
+        "dataset": DATASET_NAME,
+        "retriever_connected": retriever_instance is not None
     }
-
-
-class KBSearchRequest(BaseModel):
-    query: str = Field(..., min_length=1, max_length=500)
 
 
 @app.post("/kb/search")
@@ -199,92 +159,16 @@ def kb_search_endpoint(
         raise HTTPException(status_code=500, detail="Failed to execute search in knowledge base.") from e
 
 
-async def stream_agent_generator(message: str, thread_id: str) -> AsyncGenerator[str]:
-    """Generates Server-Sent Events asynchronously without blocking the Uvicorn event loop."""
-    agent_app = get_current_agent()
-    config = {"configurable": {"thread_id": thread_id}}
-    input_data = {"messages": [HumanMessage(content=message)]}
-    active_node = ""
-
-    try:
-        async for event in agent_app.astream_events(input_data, config=config, version="v2"):
-            event_type = event.get("event")
-
-            # Check if a new node started executing
-            if event_type == "on_chain_start":
-                node_name = event.get("metadata", {}).get("langgraph_node")
-                if node_name and node_name != active_node:
-                    active_node = node_name
-                    status_text = get_node_status_message(node_name)
-                    payload = json.dumps({"type": "status", "node": node_name, "message": status_text})
-                    yield f"data: {payload}\n\n"
-
-            # Check for node completion updates (e.g. retrieval failure notice)
-            elif event_type == "on_chain_end":
-                node_name = event.get("metadata", {}).get("langgraph_node")
-                if node_name == "retrieve_kb":
-                    output = event.get("data", {}).get("output", {})
-                    if isinstance(output, dict) and output.get("kb_retrieval_failed"):
-                        payload = json.dumps({
-                            "type": "status",
-                            "node": "retrieve_kb",
-                            "message": "Knowledge base retrieval unavailable or failed..."
-                        })
-                        yield f"data: {payload}\n\n"
-
-            # Stream LLM tokens when generating final answer
-            elif event_type == "on_chat_model_stream":
-                node_name = event.get("metadata", {}).get("langgraph_node")
-                if node_name and is_generation_node(node_name):
-                    chunk = event.get("data", {}).get("chunk")
-                    if chunk and hasattr(chunk, "content") and chunk.content:
-                        payload = json.dumps({"type": "token", "token": chunk.content})
-                        yield f"data: {payload}\n\n"
-
-        # Graph execution completed; extract final state asynchronously
-        state_snapshot = await agent_app.aget_state(config)
-        final_state = state_snapshot.values
-        source = final_state.get("source_used", "direct")
-
-        messages = final_state.get("messages", [])
-        last_content = messages[-1].content if messages else ""
-
-        payload = json.dumps({
-            "type": "done",
-            "thread_id": thread_id,
-            "source_used": source,
-            "full_content": str(last_content)
-        })
-        yield f"data: {payload}\n\n"
-
-    except Exception as e:
-        logger.error("[Streaming Error]: %s", e, exc_info=True)
-        # Never leak raw internal stack traces/provider errors to SSE clients
-        error_payload = json.dumps({
-            "type": "error",
-            "error": "An unexpected error occurred while generating your response. Please try again."
-        })
-        yield f"data: {error_payload}\n\n"
-
-
-@app.post("/chat")
-@limiter.limit("20/minute")
+@app.post("/chat", response_model=ChatResponse)
+@limiter.limit(lambda: get_settings().rate_limit)
 async def chat_endpoint(
     request: Request,
     body: ChatRequest,
     _auth: str | None = Depends(verify_api_key)
 ):
-    """Chat endpoint supporting both JSON response and SSE streaming."""
+    """Chat endpoint returning direct JSON response."""
     thread_id = clean_thread_id(body.thread_id)
 
-    # If client requested streaming
-    if body.stream:
-        return StreamingResponse(
-            stream_agent_generator(body.message, thread_id),
-            media_type="text/event-stream"
-        )
-
-    # Non-blocking async invocation (ainvoke)
     agent_app = get_current_agent()
     config = {"configurable": {"thread_id": thread_id}}
     try:
@@ -310,7 +194,6 @@ async def chat_endpoint(
         raise
     except Exception as e:
         logger.error("[API Error] /chat failed: %s", e, exc_info=True)
-        # Sanitize internal errors for client security
         raise HTTPException(
             status_code=500,
             detail="An error occurred while processing your request. Please try again later."
@@ -318,7 +201,7 @@ async def chat_endpoint(
 
 
 @app.post("/chat/stream")
-@limiter.limit("20/minute")
+@limiter.limit(lambda: get_settings().rate_limit)
 async def chat_stream_endpoint(
     request: Request,
     body: ChatRequest,
@@ -327,6 +210,6 @@ async def chat_stream_endpoint(
     """Direct Server-Sent Events streaming endpoint with rate limits."""
     thread_id = clean_thread_id(body.thread_id)
     return StreamingResponse(
-        stream_agent_generator(body.message, thread_id),
+        stream_agent_generator(body.message, thread_id, agent_app=get_current_agent()),
         media_type="text/event-stream"
     )
