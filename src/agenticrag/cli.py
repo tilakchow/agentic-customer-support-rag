@@ -34,7 +34,20 @@ def main() -> None:
         uvicorn.run("agenticrag.api:app", host=host, port=port, reload=reload)
     elif args.command == "ingest":
         logging.basicConfig(level=logging.INFO)
-        from agenticrag.ingest import run_ingestion
+        try:
+            from agenticrag.ingest import run_ingestion
+        except ImportError as e:
+            if "datasets" in str(e):
+                print(
+                    "Error: The 'datasets' library is required to run the ingestion pipeline.\n"
+                    "Install the ingest extra using:\n"
+                    "    uv pip install 'agenticrag[ingest]'\n"
+                    "or:\n"
+                    "    pip install '.[ingest]'",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+            raise
 
         run_ingestion()
     else:
