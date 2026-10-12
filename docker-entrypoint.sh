@@ -2,7 +2,7 @@
 set -e
 
 PORT="${PORT:-7860}"
-FORWARDED_ALLOW_IPS="${FORWARDED_ALLOW_IPS:-127.0.0.1}"
+FORWARDED_ALLOW_IPS="${FORWARDED_ALLOW_IPS:-${TRUSTED_PROXIES:-127.0.0.1}}"
 
 exec /app/.venv/bin/uvicorn agenticrag.api:app \
     --host 0.0.0.0 \

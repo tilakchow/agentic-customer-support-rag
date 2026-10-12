@@ -10,7 +10,6 @@ from fastapi.responses import StreamingResponse
 from langchain_core.messages import HumanMessage
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
-from slowapi.util import get_remote_address
 from starlette.middleware.cors import CORSMiddleware
 
 from agenticrag.auth import verify_api_key
@@ -24,8 +23,32 @@ from agenticrag.sse import stream_agent_generator
 logger = logging.getLogger(__name__)
 
 
+def get_client_ip(request: Request) -> str:
+    """Extracts client IP safely considering configured trusted proxies.
+
+    If request.client.host is in TRUSTED_PROXIES, inspects X-Forwarded-For and
+    takes the rightmost untrusted IP in the chain (preventing client spoofing).
+    Otherwise, trusts only the direct socket client IP.
+    """
+    direct_ip = request.client.host if request.client else "127.0.0.1"
+    settings = get_settings()
+    trusted = set(settings.trusted_proxies)
+
+    if direct_ip in trusted:
+        xfwd = request.headers.get("x-forwarded-for")
+        if xfwd:
+            ips = [ip.strip() for ip in xfwd.split(",") if ip.strip()]
+            for ip in reversed(ips):
+                if ip not in trusted:
+                    return ip
+            if ips:
+                return ips[0]
+
+    return direct_ip
+
+
 def get_client_rate_limit_key(request: Request) -> str:
-    """Extracts rate limit identifier: verified API key if valid, otherwise Uvicorn-managed client IP."""
+    """Extracts rate limit identifier: verified API key if valid, otherwise spoof-safe client IP."""
     api_key = request.headers.get("X-API-Key")
     configured_key = get_settings().api_key
     # Only assign a dedicated API key rate bucket if the key is genuine and matches configured secret
@@ -36,8 +59,7 @@ def get_client_rate_limit_key(request: Request) -> str:
     ):
         return f"key:{api_key.strip()}"
 
-    # Use Uvicorn-managed client IP (which securely processes proxy headers based on forwarded-allow-ips)
-    return get_remote_address(request)
+    return get_client_ip(request)
 
 
 # Initialize rate limiter with proxy-aware key tracking
@@ -60,6 +82,10 @@ async def lifespan(app: FastAPI):
             "[SECURITY NOTICE] Running without API_KEY. All /chat endpoints are publicly accessible."
         )
     settings.validate_runtime_keys(strict=False)
+    if not settings.trusted_proxies:
+        logger.warning(
+            "[SECURITY NOTICE] TRUSTED_PROXIES is empty. Rate limiting ignores X-Forwarded-For headers to prevent spoofing."
+        )
 
     if not settings.checkpoint_db and not settings.allow_in_memory_checkpoints:
         raise RuntimeError(

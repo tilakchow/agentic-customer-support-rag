@@ -59,17 +59,21 @@ class Settings(BaseSettings):
     tavily_max_concurrency: int = Field(default=5, validation_alias="TAVILY_MAX_CONCURRENCY")
     max_thread_messages: int = Field(default=40, validation_alias="MAX_THREAD_MESSAGES")
 
+    trusted_proxies: Annotated[list[str], NoDecode] = Field(
+        default_factory=list, validation_alias="TRUSTED_PROXIES"
+    )
+
     @model_validator(mode="after")
     def _set_checkpoint_defaults(self) -> "Settings":
         if self.allow_in_memory_checkpoints is None:
             self.allow_in_memory_checkpoints = self.environment.lower() != "production"
         return self
 
-    @field_validator("allowed_origins", mode="before")
+    @field_validator("allowed_origins", "trusted_proxies", mode="before")
     @classmethod
-    def parse_allowed_origins(cls, v):
+    def parse_comma_separated_list(cls, v):
         if isinstance(v, str):
-            return [origin.strip() for origin in v.split(",") if origin.strip()]
+            return [item.strip() for item in v.split(",") if item.strip()]
         return v
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
