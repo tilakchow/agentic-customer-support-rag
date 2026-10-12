@@ -20,7 +20,7 @@ app_port: 7860
 [![Pinecone](https://img.shields.io/badge/Pinecone-Vector_DB-000000.svg?logo=pinecone&logoColor=white)](https://pinecone.io)
 [![Groq](https://img.shields.io/badge/Groq-LPU_Inference-F55036.svg)](https://groq.com)
 [![Tavily](https://img.shields.io/badge/Tavily-Web_Search-4A90E2.svg)](https://tavily.com)
-[![Tests](https://img.shields.io/badge/Tests-52%20Passed-brightgreen.svg)](tests/)
+[![Tests](https://img.shields.io/badge/Tests-72%20Passed-brightgreen.svg)](tests/)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 </div>
@@ -179,6 +179,7 @@ cp .env.example .env
 | `TAVILY_API_KEY` | `""` | Tavily API key for web search fallback |
 | `API_KEY` | `""` | Optional secret token for `X-API-Key` auth (empty = public API) |
 | `REQUIRE_API_KEY` | `false` | When true, server startup aborts if `API_KEY` is empty |
+| `ENVIRONMENT` | `"development"` | Set to `"production"` to enforce mandatory `API_KEY` authentication |
 | `ALLOWED_ORIGINS` | `http://localhost:5173,...` | Comma-separated CORS allowed origin list |
 | `RATE_LIMIT` | `20/minute` | Rate limit for chat endpoints |
 | `MAX_MESSAGE_LENGTH` | `1500` | Max character length for user questions |
@@ -259,6 +260,29 @@ Open **`http://localhost:5173`** in your browser.
 }
 ```
 
+### `POST /kb/search` — Direct Knowledge Base Vector Search
+Direct semantic vector similarity search over indexed documentation:
+```json
+// Request
+{
+  "query": "What is the return window?"
+}
+
+// Response
+{
+  "query": "What is the return window?",
+  "results": [
+    {
+      "content": "Customers may return unworn items within 30 days of receipt...",
+      "metadata": {
+        "source": "bitext-support",
+        "score": 0.9125
+      }
+    }
+  ]
+}
+```
+
 ### `POST /chat/stream` — Real-Time SSE Stream
 Streams Server-Sent Events representing reasoning transitions and tokens:
 - **`status`**: Agent step update (e.g., `{"type": "status", "node": "retrieve_kb", "message": "Searching private knowledge base..."}`)
@@ -270,7 +294,7 @@ Streams Server-Sent Events representing reasoning transitions and tokens:
 
 ## 🧪 Testing & Quality Assurance
 
-The codebase includes 52 unit, integration, and end-to-end tests:
+The codebase includes 72 unit, integration, and end-to-end tests:
 
 ```bash
 # Run pytest with coverage gate (fails under 70%)
@@ -286,7 +310,7 @@ uv run mypy src/ --ignore-missing-imports
 
 ## 🐳 Docker Deployment
 
-The repository includes a single-stage `python:3.14-slim` `Dockerfile` with non-root security (`appuser`), a pre-cached FastEmbed model, and container health checks:
+The repository includes a multi-stage `python:3.12-slim` `Dockerfile` with non-root security (`appuser`), a pre-cached FastEmbed model, exec-form entrypoint for PID 1 process management, and container health checks:
 
 ```bash
 # Build Docker image
@@ -305,5 +329,5 @@ docker run -p 7860:7860 \
 ## 👨‍💻 Author
 
 **Tilak chowdary**  
-- **Email**: [tilakchowdary18@gmail.com](mailto:tilakchowdary18@gmail.com)  
+- **Email**: [tilakchowdary5@gmail.com](mailto:tilakchowdary5@gmail.com)  
 - **Repository**: [tilakchow/agentic-customer-support-rag](https://github.com/tilakchow/agentic-customer-support-rag)

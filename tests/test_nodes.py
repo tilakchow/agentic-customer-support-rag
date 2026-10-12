@@ -188,3 +188,129 @@ def test_retriever_backoff_on_failure():
         cfg._vectorstore_client = None
         cfg._retriever_client = None
         cfg._last_retriever_failure_time = 0.0
+
+
+@pytest.mark.asyncio
+async def test_generate_from_kb_success():
+    from agenticrag.nodes import generate_from_kb
+
+    state = {
+        "messages": [HumanMessage(content="What is the return window?")],
+        "kb_docs": [
+            Document(
+                page_content="Returns are accepted within 30 days.", metadata={"source": "faq"}
+            )
+        ],
+    }
+    with patch("agenticrag.nodes.get_llm") as mock_llm:
+        mock_llm.return_value.ainvoke = AsyncMock(
+            return_value=AIMessage(content="You have 30 days to return your purchase.")
+        )
+        result = await generate_from_kb(state)
+        assert result["source_used"] == "private_kb"
+        assert "30 days" in result["messages"][0].content
+
+
+@pytest.mark.asyncio
+async def test_generate_from_kb_llm_failure_containment():
+    from agenticrag.nodes import generate_from_kb
+
+    state = {
+        "messages": [HumanMessage(content="What is the return window?")],
+        "kb_docs": [
+            Document(
+                page_content="Returns are accepted within 30 days.", metadata={"source": "faq"}
+            )
+        ],
+    }
+    with patch("agenticrag.nodes.get_llm") as mock_llm:
+        mock_llm.return_value.ainvoke = AsyncMock(side_effect=RuntimeError("Groq inference 503"))
+        result = await generate_from_kb(state)
+        assert result["source_used"] == "insufficient_evidence"
+        assert "temporary service issue" in result["messages"][0].content
+
+
+@pytest.mark.asyncio
+async def test_generate_from_web_success():
+    from agenticrag.nodes import generate_from_web
+
+    state = {
+        "messages": [HumanMessage(content="When does the next sale start?")],
+        "web_results": "The annual sale starts on November 15th.",
+    }
+    with patch("agenticrag.nodes.get_llm") as mock_llm:
+        mock_llm.return_value.ainvoke = AsyncMock(
+            return_value=AIMessage(content="The upcoming sale begins on November 15th.")
+        )
+        result = await generate_from_web(state)
+        assert result["source_used"] == "web_search"
+        assert "November 15th" in result["messages"][0].content
+
+
+@pytest.mark.asyncio
+async def test_generate_from_web_llm_failure_containment():
+    from agenticrag.nodes import generate_from_web
+
+    state = {
+        "messages": [HumanMessage(content="When does the next sale start?")],
+        "web_results": "The annual sale starts on November 15th.",
+    }
+    with patch("agenticrag.nodes.get_llm") as mock_llm:
+        mock_llm.return_value.ainvoke = AsyncMock(
+            side_effect=TimeoutError("Groq request timed out")
+        )
+        result = await generate_from_web(state)
+        assert result["source_used"] == "insufficient_evidence"
+        assert "temporary service issue" in result["messages"][0].content
+
+
+@pytest.mark.asyncio
+async def test_direct_answer_success():
+    from agenticrag.nodes import direct_answer
+
+    state = {"messages": [HumanMessage(content="Hi there!")]}
+    with patch("agenticrag.nodes.get_llm") as mock_llm:
+        mock_llm.return_value.ainvoke = AsyncMock(
+            return_value=AIMessage(content="Hello! How can I help you today?")
+        )
+        result = await direct_answer(state)
+        assert result["source_used"] == "direct"
+        assert "Hello!" in result["messages"][0].content
+
+
+@pytest.mark.asyncio
+async def test_direct_answer_llm_failure_containment():
+    from agenticrag.nodes import direct_answer
+
+    state = {"messages": [HumanMessage(content="Hi there!")]}
+    with patch("agenticrag.nodes.get_llm") as mock_llm:
+        mock_llm.return_value.ainvoke = AsyncMock(side_effect=RuntimeError("Groq rate limit"))
+        result = await direct_answer(state)
+        assert result["source_used"] == "direct"
+        assert "Hello!" in result["messages"][0].content
+
+
+@pytest.mark.asyncio
+async def test_answer_insufficient_success():
+    from agenticrag.nodes import answer_insufficient
+
+    state = {"messages": [HumanMessage(content="Tell me proprietary secrets")]}
+    with patch("agenticrag.nodes.get_llm") as mock_llm:
+        mock_llm.return_value.ainvoke = AsyncMock(
+            return_value=AIMessage(content="I do not have sufficient information to answer that.")
+        )
+        result = await answer_insufficient(state)
+        assert result["source_used"] == "insufficient_evidence"
+        assert "sufficient information" in result["messages"][0].content
+
+
+@pytest.mark.asyncio
+async def test_answer_insufficient_llm_failure_containment():
+    from agenticrag.nodes import answer_insufficient
+
+    state = {"messages": [HumanMessage(content="Unknown issue")]}
+    with patch("agenticrag.nodes.get_llm") as mock_llm:
+        mock_llm.return_value.ainvoke = AsyncMock(side_effect=RuntimeError("Network error"))
+        result = await answer_insufficient(state)
+        assert result["source_used"] == "insufficient_evidence"
+        assert "Live Chat" in result["messages"][0].content

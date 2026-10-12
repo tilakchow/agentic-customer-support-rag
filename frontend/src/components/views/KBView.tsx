@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react"
-import { Database, Search, ArrowRight, CheckCircle2, AlertCircle, Layers, FileText } from "lucide-react"
+import { Database, Search, ArrowRight, CheckCircle2, AlertCircle, FileText } from "lucide-react"
 import { fetchKBInfo, searchKB, KBInfoResponse, KBSearchResult } from "../../services/api"
 
 interface KBViewProps {
@@ -8,7 +8,7 @@ interface KBViewProps {
 
 export const KBView: React.FC<KBViewProps> = ({ onAskInChat }) => {
   const [kbInfo, setKbInfo] = useState<KBInfoResponse | null>(null)
-  const [loading, setLoading] = useState(true)
+  const [_loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState("")
   const [searchResults, setSearchResults] = useState<KBSearchResult[]>([])
   const [searching, setSearching] = useState(false)

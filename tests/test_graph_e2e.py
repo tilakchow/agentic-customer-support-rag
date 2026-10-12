@@ -178,3 +178,106 @@ async def test_e2e_contact_query_skips_web(agent_app):
         mock_web_search.assert_not_called()
         assert result["source_used"] == "insufficient_evidence"
         assert "phone support is not listed" in str(result["messages"][-1].content)
+
+
+@pytest.mark.asyncio
+async def test_e2e_pinecone_failure_falls_back_to_web(agent_app):
+    """Failure Injection: Pinecone network failure triggers recovery, falling back to web search."""
+    mock_vs = MagicMock()
+    mock_vs.similarity_search_with_score.side_effect = ConnectionError(
+        "Pinecone cluster unreachable"
+    )
+
+    mock_search = MagicMock()
+    mock_search.invoke.return_value = {
+        "results": [
+            {"title": "Documentation", "content": "The shipping timeline is 3-5 business days."}
+        ],
+        "answer": "3-5 business days",
+    }
+
+    with (
+        patch("agenticrag.nodes.get_router_llm") as mock_router,
+        patch("agenticrag.nodes.get_vectorstore", return_value=mock_vs),
+        patch("agenticrag.nodes.get_grader_llm") as mock_grader,
+        patch("agenticrag.nodes.get_web_search", return_value=mock_search),
+        patch("agenticrag.nodes.get_llm") as mock_llm,
+    ):
+        mock_router.return_value.ainvoke = AsyncMock(return_value=RouteDecision(route="kb"))
+        mock_grader.return_value.ainvoke = AsyncMock(return_value=EvidenceGrade(grade="good"))
+        mock_llm.return_value.ainvoke = AsyncMock(
+            return_value=AIMessage(content="Standard shipping takes 3-5 business days.")
+        )
+
+        result = await agent_app.ainvoke(
+            {"messages": [HumanMessage(content="How long does standard delivery take?")]},
+            config={"configurable": {"thread_id": "test-e2e-pinecone-fail"}},
+        )
+
+        assert result["kb_retrieval_failed"] is True
+        assert result["source_used"] == "web_search"
+        assert "3-5 business days" in str(result["messages"][-1].content)
+
+
+@pytest.mark.asyncio
+async def test_e2e_tavily_failure_falls_back_to_insufficient(agent_app):
+    """Failure Injection: Tavily search failure prevents infinite loop and routes to answer_insufficient."""
+    mock_vs = MagicMock()
+    mock_vs.similarity_search_with_score.return_value = []
+
+    mock_search = MagicMock()
+    mock_search.invoke.side_effect = TimeoutError("Tavily search timeout")
+
+    with (
+        patch("agenticrag.nodes.get_router_llm") as mock_router,
+        patch("agenticrag.nodes.get_vectorstore", return_value=mock_vs),
+        patch("agenticrag.nodes.get_grader_llm") as mock_grader,
+        patch("agenticrag.nodes.get_web_search", return_value=mock_search),
+        patch("agenticrag.nodes.get_llm") as mock_llm,
+    ):
+        mock_router.return_value.ainvoke = AsyncMock(return_value=RouteDecision(route="kb"))
+        mock_grader.return_value.ainvoke = AsyncMock(return_value=EvidenceGrade(grade="weak"))
+        mock_llm.return_value.ainvoke = AsyncMock(
+            return_value=AIMessage(
+                content="I could not locate sufficient information in our records."
+            )
+        )
+
+        result = await agent_app.ainvoke(
+            {"messages": [HumanMessage(content="When was this feature introduced?")]},
+            config={"configurable": {"thread_id": "test-e2e-tavily-fail"}},
+        )
+
+        assert result["web_search_failed"] is True
+        assert result["source_used"] == "insufficient_evidence"
+        assert len(result["messages"]) == 2
+
+
+@pytest.mark.asyncio
+async def test_e2e_groq_failure_containment(agent_app):
+    """Failure Injection: Groq LLM failure during final generation is contained gracefully."""
+    mock_vs = MagicMock()
+    mock_vs.similarity_search_with_score.return_value = [
+        (Document(page_content="Our return window is 30 days.", metadata={"source": "faq"}), 0.95)
+    ]
+
+    with (
+        patch("agenticrag.nodes.get_router_llm") as mock_router,
+        patch("agenticrag.nodes.get_vectorstore", return_value=mock_vs),
+        patch("agenticrag.nodes.get_grader_llm") as mock_grader,
+        patch("agenticrag.nodes.get_llm") as mock_llm,
+    ):
+        mock_router.return_value.ainvoke = AsyncMock(return_value=RouteDecision(route="kb"))
+        mock_grader.return_value.ainvoke = AsyncMock(return_value=EvidenceGrade(grade="good"))
+        # Synthesis LLM raises rate limit / network error
+        mock_llm.return_value.ainvoke = AsyncMock(
+            side_effect=RuntimeError("Groq 429 Too Many Requests")
+        )
+
+        result = await agent_app.ainvoke(
+            {"messages": [HumanMessage(content="What is the return window?")]},
+            config={"configurable": {"thread_id": "test-e2e-groq-fail"}},
+        )
+
+        assert result["source_used"] == "insufficient_evidence"
+        assert "temporary service issue" in str(result["messages"][-1].content)

@@ -1,3 +1,5 @@
+import re
+
 # --- Customer Support System & Node Prompts ---
 
 CUSTOMER_SUPPORT_SYSTEM_PROMPT = """You are a friendly, professional, and reliable customer support AI assistant. Your goal is to understand customer issues, provide accurate answers, and guide customers toward practical solutions using the available knowledge base.
@@ -42,6 +44,22 @@ Route to "direct" for:
 Return your response as valid JSON:
 {{"route": "kb"}} or {{"route": "direct"}}
 """
+
+
+def sanitize_untrusted_context(text: str) -> str:
+    """Sanitizes untrusted context to prevent prompt injection and XML delimiter breakouts."""
+    if not text:
+        return ""
+    # Neutralize closing and opening context tags to prevent prompt escaping
+    sanitized = re.sub(
+        r"<\s*/?\s*context\s*>",
+        lambda m: m.group(0).replace("<", "&lt;").replace(">", "&gt;"),
+        text,
+        flags=re.IGNORECASE,
+    )
+    # Strip non-printable control characters (except newline, tab, carriage return)
+    sanitized = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", "", sanitized)
+    return sanitized
 
 
 UNTRUSTED_CONTEXT_INSTRUCTION = (

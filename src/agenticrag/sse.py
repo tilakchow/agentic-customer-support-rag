@@ -1,10 +1,11 @@
-"""Server-Sent Events (SSE) formatting helpers and asynchronous agent streaming generator."""
-
+import asyncio
 import json
 import logging
 from collections.abc import AsyncGenerator
+from typing import Any
 
 from langchain_core.messages import HumanMessage
+from starlette.requests import Request
 
 from agenticrag.graph import get_agent_app
 from agenticrag.node_meta import get_node_status_message, is_generation_node
@@ -18,9 +19,12 @@ def sse(event: dict) -> str:
 
 
 async def stream_agent_generator(
-    message: str, thread_id: str, agent_app=None
-) -> AsyncGenerator[str]:
-    """Generates Server-Sent Events asynchronously without blocking the Uvicorn event loop."""
+    message: str,
+    thread_id: str,
+    agent_app: Any = None,
+    request: Request | None = None,
+) -> AsyncGenerator[str, None]:
+    """Generates Server-Sent Events asynchronously with client disconnect detection."""
     if agent_app is None:
         agent_app = get_agent_app()
 
@@ -30,6 +34,10 @@ async def stream_agent_generator(
 
     try:
         async for event in agent_app.astream_events(input_data, config=config, version="v2"):
+            if request is not None and await request.is_disconnected():
+                logger.info("[Streaming] Client disconnected prematurely. Aborting stream.")
+                return
+
             event_type = event.get("event")
 
             # Check if a new node started executing
@@ -79,6 +87,9 @@ async def stream_agent_generator(
             }
         )
 
+    except asyncio.CancelledError:
+        logger.info("[Streaming] Stream cancelled due to client disconnect.")
+        raise
     except Exception as e:
         logger.error("[Streaming Error]: %s", e, exc_info=True)
         # Never leak raw internal stack traces/provider errors to SSE clients

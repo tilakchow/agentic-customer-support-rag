@@ -226,3 +226,87 @@ def test_clean_thread_id_hostile_input():
     # Pure special characters fallback to valid uuid
     sanitized_symbols = clean_thread_id("!@#$%^&*()")
     assert len(sanitized_symbols) > 10
+
+
+def test_production_environment_refuses_startup_without_api_key(monkeypatch):
+    """When ENVIRONMENT is production and API_KEY is empty, lifespan refuses to start."""
+    import asyncio
+
+    from agenticrag.api import app, lifespan
+    from agenticrag.config import Settings
+
+    fake_settings = Settings(environment="production", api_key="")
+    monkeypatch.setattr(api_module, "get_settings", lambda: fake_settings)
+
+    async def run_lifespan():
+        async with lifespan(app):
+            pass
+
+    with pytest.raises(RuntimeError, match="Production mode .* requires API_KEY"):
+        asyncio.run(run_lifespan())
+
+
+def test_get_client_rate_limit_key_resolution():
+    """Verifies that rate limit key properly prioritizes API key, X-Forwarded-For, X-Real-IP, and client IP."""
+    from starlette.requests import Request
+
+    from agenticrag.api import get_client_rate_limit_key
+
+    # 1. API key header takes precedence
+    req_with_key = Request(
+        scope={
+            "type": "http",
+            "headers": [(b"x-api-key", b"test-client-key-123"), (b"x-forwarded-for", b"10.0.0.1")],
+            "client": ("192.168.1.1", 12345),
+        }
+    )
+    assert get_client_rate_limit_key(req_with_key) == "key:test-client-key-123"
+
+    # 2. X-Forwarded-For takes precedence over direct client IP behind proxies
+    req_with_forwarded = Request(
+        scope={
+            "type": "http",
+            "headers": [(b"x-forwarded-for", b"203.0.113.195, 70.41.3.18")],
+            "client": ("10.0.0.1", 12345),
+        }
+    )
+    assert get_client_rate_limit_key(req_with_forwarded) == "ip:203.0.113.195"
+
+    # 3. X-Real-IP takes precedence if X-Forwarded-For is missing
+    req_with_real_ip = Request(
+        scope={
+            "type": "http",
+            "headers": [(b"x-real-ip", b"198.51.100.42")],
+            "client": ("10.0.0.1", 12345),
+        }
+    )
+    assert get_client_rate_limit_key(req_with_real_ip) == "ip:198.51.100.42"
+
+    # 4. Direct client host fallback when no proxy headers
+    req_direct = Request(
+        scope={
+            "type": "http",
+            "headers": [],
+            "client": ("192.0.2.1", 12345),
+        }
+    )
+    assert get_client_rate_limit_key(req_direct) == "ip:192.0.2.1"
+
+
+def test_kb_search_endpoint_success(client, monkeypatch):
+    """Verifies /kb/search returns formatted results when retriever finds documents."""
+    from langchain_core.documents import Document
+
+    mock_retriever = MagicMock()
+    mock_retriever.invoke.return_value = [
+        Document(page_content="Our return window is 30 days.", metadata={"source": "kb-policy"})
+    ]
+    monkeypatch.setattr(api_module, "get_retriever", lambda: mock_retriever)
+
+    response = client.post("/kb/search", json={"query": "return window"})
+    assert response.status_code == 200
+    data = response.json()
+    assert data["query"] == "return window"
+    assert len(data["results"]) == 1
+    assert "return window is 30 days" in data["results"][0]["content"]
+    assert data["results"][0]["metadata"]["source"] == "kb-policy"

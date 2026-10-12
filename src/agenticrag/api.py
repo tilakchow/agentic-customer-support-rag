@@ -23,8 +23,28 @@ from agenticrag.sse import stream_agent_generator
 
 logger = logging.getLogger(__name__)
 
-# Initialize rate limiter with IP tracking
-limiter = Limiter(key_func=get_remote_address)
+
+def get_client_rate_limit_key(request: Request) -> str:
+    """Extracts rate limit identifier: API key if present, else real client IP behind reverse proxies."""
+    api_key = request.headers.get("X-API-Key")
+    if api_key:
+        return f"key:{api_key.strip()}"
+
+    forwarded_for = request.headers.get("X-Forwarded-For")
+    if forwarded_for:
+        client_ip = forwarded_for.split(",")[0].strip()
+        if client_ip:
+            return f"ip:{client_ip}"
+
+    real_ip = request.headers.get("X-Real-IP")
+    if real_ip:
+        return f"ip:{real_ip.strip()}"
+
+    return f"ip:{get_remote_address(request)}"
+
+
+# Initialize rate limiter with proxy-aware key tracking
+limiter = Limiter(key_func=get_client_rate_limit_key)
 
 
 # --- Application Lifespan Handler ---
@@ -32,8 +52,16 @@ limiter = Limiter(key_func=get_remote_address)
 async def lifespan(app: FastAPI):
     """Initializes and cleans up state during application lifecycle."""
     settings = get_settings()
+    if settings.environment.lower() == "production" and not settings.api_key:
+        raise RuntimeError(
+            "Production mode (ENVIRONMENT=production) requires API_KEY to be configured for security."
+        )
     if settings.require_api_key and not settings.api_key:
         raise RuntimeError("REQUIRE_API_KEY is true, but API_KEY is empty or not configured.")
+    if not settings.api_key:
+        logger.warning(
+            "[SECURITY NOTICE] Running without API_KEY. All /chat endpoints are publicly accessible."
+        )
     settings.validate_runtime_keys(strict=False)
 
     # Pre-compile the agent graph on startup
@@ -197,6 +225,8 @@ async def chat_stream_endpoint(
     """Direct Server-Sent Events streaming endpoint with rate limits."""
     thread_id = clean_thread_id(body.thread_id)
     return StreamingResponse(
-        stream_agent_generator(body.message, thread_id, agent_app=get_current_agent()),
+        stream_agent_generator(
+            body.message, thread_id, agent_app=get_current_agent(), request=request
+        ),
         media_type="text/event-stream",
     )

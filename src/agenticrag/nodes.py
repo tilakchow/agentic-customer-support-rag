@@ -1,13 +1,11 @@
-"""Core LangGraph nodes and decision-making logic for Agentic Customer Support RAG."""
+"""Core LangGraph execution nodes and error-resilient state handlers for Agentic RAG."""
 
 import asyncio
 import logging
-from typing import Annotated, Any, Literal
+from typing import Any, Literal
 
 from langchain_core.documents import Document
-from langchain_core.messages import AIMessage, AnyMessage, HumanMessage, SystemMessage
-from langgraph.graph.message import add_messages
-from typing_extensions import TypedDict
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
 from agenticrag.clients import (
     get_grader_llm,
@@ -38,11 +36,41 @@ from agenticrag.prompts import (
     WEB_GENERATION_HUMAN_TEMPLATE,
     WEB_GRADER_HUMAN_TEMPLATE,
     WEB_GRADER_SYSTEM_PROMPT,
+    sanitize_untrusted_context,
 )
+from agenticrag.routing import (
+    decide_after_kb_grade as _routing_decide_after_kb_grade,
+)
+from agenticrag.routing import (
+    decide_after_web_grade as _routing_decide_after_web_grade,
+)
+from agenticrag.routing import (
+    get_conversation_history,
+    get_latest_question,
+    is_internal_contact_query,
+    is_proprietary_policy_query,
+    route_after_router,
+)
+from agenticrag.state import AgentState
 
 logger = logging.getLogger(__name__)
 
-# Re-export node presentation metadata for backward compatibility
+
+def decide_after_kb_grade(
+    state: AgentState,
+) -> Literal["generate_from_kb", "search_web", "answer_insufficient"]:
+    """Conditional edge decision: delegates to routing logic using local settings."""
+    return _routing_decide_after_kb_grade(state, settings=get_settings())
+
+
+def decide_after_web_grade(
+    state: AgentState,
+) -> Literal["generate_from_web", "rewrite_query", "answer_insufficient"]:
+    """Conditional edge decision: delegates to routing logic using local settings."""
+    return _routing_decide_after_web_grade(state, settings=get_settings())
+
+
+# Re-export state, routing, and metadata symbols for backward compatibility
 __all__ = [
     "AgentState",
     "NodeName",
@@ -51,16 +79,16 @@ __all__ = [
     "is_generation_node",
     "get_latest_question",
     "get_conversation_history",
-    "route_question",
-    "route_after_router",
-    "retrieve_kb",
-    "grade_kb_evidence",
     "is_internal_contact_query",
     "is_proprietary_policy_query",
+    "route_after_router",
     "decide_after_kb_grade",
+    "decide_after_web_grade",
+    "route_question",
+    "retrieve_kb",
+    "grade_kb_evidence",
     "search_web",
     "grade_web_evidence",
-    "decide_after_web_grade",
     "rewrite_query",
     "generate_from_kb",
     "generate_from_web",
@@ -69,160 +97,7 @@ __all__ = [
 ]
 
 
-# --- State Definition ---
-
-
-class AgentState(TypedDict):
-    """Execution state schema passed across all LangGraph nodes."""
-
-    messages: Annotated[list[AnyMessage], add_messages]
-    current_query: str
-    kb_docs: list[Document]
-    kb_retrieval_failed: bool
-    top_similarity_score: float
-    web_results: str
-    web_search_failed: bool
-    kb_grade: str
-    web_grade: str
-    route: str  # Router intent: 'kb' or 'direct'
-    source_used: (
-        str  # Origin of answer: 'private_kb', 'web_search', 'direct', 'insufficient_evidence'
-    )
-    retry_count: int
-
-
-# --- Helper Functions (Pure & Sync) ---
-
-
-def get_latest_question(state: AgentState) -> str:
-    """Extracts the most recent user inquiry from the state messages."""
-    for message in reversed(state.get("messages", [])):
-        if isinstance(message, HumanMessage):
-            content = message.content
-            return content if isinstance(content, str) else str(content)
-        if isinstance(message, tuple) and message[0] == "human":
-            return str(message[1])
-        if getattr(message, "type", None) == "human":
-            return str(getattr(message, "content", ""))
-    return ""
-
-
-def get_conversation_history(state: AgentState, limit: int | None = None) -> str:
-    """Extracts recent conversation turns prior to the active query."""
-    if limit is None:
-        limit = get_settings().max_thread_history
-
-    messages = state.get("messages", [])
-    if len(messages) <= 1:
-        return "No previous conversation."
-
-    prior_messages = messages[:-1]
-    history = []
-    for msg in prior_messages[-limit:]:
-        role = "User" if isinstance(msg, HumanMessage) else "Assistant"
-        content = msg.content if hasattr(msg, "content") else str(msg)
-        content_snippet = str(content).strip()
-        if content_snippet:
-            history.append(f"{role}: {content_snippet}")
-
-    return "\n".join(history) if history else "No previous conversation."
-
-
-def is_internal_contact_query(query: str) -> bool:
-    """Detects if query asks for internal company contact channels (phone, hotline, email)."""
-    q = query.lower()
-    contact_keywords = [
-        "phone number",
-        "customer service number",
-        "customer support number",
-        "toll free",
-        "hotline",
-        "telephone",
-        "call you",
-        "call support",
-        "support phone",
-        "helpdesk number",
-        "contact number",
-        "call center",
-        "direct number",
-        "helpline",
-        "support number",
-    ]
-    return any(kw in q for kw in contact_keywords)
-
-
-def is_proprietary_policy_query(query: str) -> bool:
-    """Detects inquiries regarding proprietary company policies to prevent external web hallucination."""
-    q = query.lower()
-    policy_keywords = [
-        "policy",
-        "return policy",
-        "refund policy",
-        "cancellation policy",
-        "warranty policy",
-        "exchange policy",
-        "guarantee policy",
-        "terms of service",
-    ]
-    return any(kw in q for kw in policy_keywords)
-
-
-def route_after_router(state: AgentState) -> Literal["retrieve_kb", "direct_answer"]:
-    """Conditional edge decision: routes to knowledge base retrieval or direct response."""
-    if state.get("route") == "kb":
-        return NodeName.RETRIEVE_KB.value
-    return NodeName.DIRECT_ANSWER.value
-
-
-def decide_after_kb_grade(
-    state: AgentState,
-) -> Literal["generate_from_kb", "search_web", "answer_insufficient"]:
-    """Conditional edge decision: proceeds to KB synthesis if grade is good, else falls back to web search or insufficient notice."""
-    if state.get("kb_grade") == "good":
-        return NodeName.GENERATE_FROM_KB.value
-
-    settings = get_settings()
-    if not settings.web_fallback_enabled:
-        logger.info(
-            "[Routing] Web fallback disabled by configuration. Routing to answer_insufficient."
-        )
-        return NodeName.ANSWER_INSUFFICIENT.value
-
-    # Prevent searching the open web for proprietary contact numbers/channels
-    question = get_latest_question(state)
-    if is_internal_contact_query(question):
-        logger.info(
-            "[Routing] Contact inquiry without KB evidence. Skipping web search to prevent external contact hallucination."
-        )
-        return NodeName.ANSWER_INSUFFICIENT.value
-
-    # Prevent searching the open web for proprietary company policies
-    if is_proprietary_policy_query(question):
-        logger.info(
-            "[Routing] Proprietary policy inquiry without KB evidence. Skipping web search."
-        )
-        return NodeName.ANSWER_INSUFFICIENT.value
-
-    return NodeName.SEARCH_WEB.value
-
-
-def decide_after_web_grade(
-    state: AgentState,
-) -> Literal["generate_from_web", "rewrite_query", "answer_insufficient"]:
-    """Conditional edge decision: routes to web synthesis, query rewrite retry, or insufficient notice."""
-    # If search failed due to API/network exception, route immediately to answer_insufficient
-    if state.get("web_search_failed", False):
-        return NodeName.ANSWER_INSUFFICIENT.value
-
-    if state.get("web_grade") == "good":
-        return NodeName.GENERATE_FROM_WEB.value
-    max_retries = get_settings().max_retries
-    if state.get("retry_count", 0) < max_retries:
-        return NodeName.REWRITE_QUERY.value
-    return NodeName.ANSWER_INSUFFICIENT.value
-
-
-# --- Async Graph Nodes ---
+# --- Async Graph Execution Nodes ---
 
 
 async def route_question(state: AgentState) -> dict[str, Any]:
@@ -328,9 +203,10 @@ async def grade_kb_evidence(state: AgentState) -> dict[str, Any]:
             return {"kb_grade": "good"}
 
     try:
-        context = "\n\n".join(
+        raw_context = "\n\n".join(
             f"Source: {doc.metadata.get('source', 'unknown')}\n{doc.page_content}" for doc in docs
         )
+        context = sanitize_untrusted_context(raw_context)
 
         messages = [
             SystemMessage(content=KB_GRADER_SYSTEM_PROMPT),
@@ -371,7 +247,7 @@ async def search_web(state: AgentState) -> dict[str, Any]:
         return {"web_results": web_text, "web_search_failed": False}
     except Exception as e:
         logger.error("[Tavily Search Error]: %s", e, exc_info=True)
-        # Never store raw exception text as evidence!
+        # Never store raw exception text as evidence
         return {"web_results": "", "web_search_failed": True}
 
 
@@ -389,10 +265,13 @@ async def grade_web_evidence(state: AgentState) -> dict[str, Any]:
 
     try:
         question = get_latest_question(state)
+        sanitized_web_results = sanitize_untrusted_context(web_results)
         messages = [
             SystemMessage(content=WEB_GRADER_SYSTEM_PROMPT),
             HumanMessage(
-                content=WEB_GRADER_HUMAN_TEMPLATE.format(question=question, web_results=web_results)
+                content=WEB_GRADER_HUMAN_TEMPLATE.format(
+                    question=question, web_results=sanitized_web_results
+                )
             ),
         ]
         grade = await get_grader_llm().ainvoke(messages)
@@ -426,10 +305,11 @@ async def generate_from_kb(state: AgentState) -> dict[str, Any]:
     """Synthesizes customer response grounded in retrieved internal knowledge base documents."""
     question = get_latest_question(state)
     history = get_conversation_history(state)
-    context = "\n\n".join(
+    raw_context = "\n\n".join(
         f"[KB Source: {doc.metadata.get('source', 'unknown')}]\n{doc.page_content}"
         for doc in state.get("kb_docs", [])
     )
+    context = sanitize_untrusted_context(raw_context)
     system_text = CUSTOMER_SUPPORT_SYSTEM_PROMPT + UNTRUSTED_CONTEXT_INSTRUCTION
     human_text = KB_GENERATION_HUMAN_TEMPLATE.format(
         context=context,
@@ -437,16 +317,27 @@ async def generate_from_kb(state: AgentState) -> dict[str, Any]:
         question=question,
     )
     messages = [SystemMessage(content=system_text), HumanMessage(content=human_text)]
-    response = await get_llm().ainvoke(messages)
-    answer = response.content if hasattr(response, "content") else str(response)
-    return {"messages": [AIMessage(content=answer)], "source_used": "private_kb"}
+    try:
+        response = await get_llm().ainvoke(messages)
+        answer = response.content if hasattr(response, "content") else str(response)
+        return {"messages": [AIMessage(content=answer)], "source_used": "private_kb"}
+    except Exception as e:
+        logger.error("[KB Generation Error] LLM synthesis failed: %s", e, exc_info=True)
+        return {
+            "messages": [
+                AIMessage(
+                    content="I apologize, but I am currently unable to complete your request due to a temporary service issue. Please try again shortly."
+                )
+            ],
+            "source_used": "insufficient_evidence",
+        }
 
 
 async def generate_from_web(state: AgentState) -> dict[str, Any]:
     """Synthesizes customer response grounded in verified external web search information."""
     question = get_latest_question(state)
     history = get_conversation_history(state)
-    web_context = state.get("web_results", "")
+    web_context = sanitize_untrusted_context(state.get("web_results", ""))
     system_text = CUSTOMER_SUPPORT_SYSTEM_PROMPT + UNTRUSTED_CONTEXT_INSTRUCTION
     human_text = WEB_GENERATION_HUMAN_TEMPLATE.format(
         web_context=web_context,
@@ -454,9 +345,20 @@ async def generate_from_web(state: AgentState) -> dict[str, Any]:
         question=question,
     )
     messages = [SystemMessage(content=system_text), HumanMessage(content=human_text)]
-    response = await get_llm().ainvoke(messages)
-    answer = response.content if hasattr(response, "content") else str(response)
-    return {"messages": [AIMessage(content=answer)], "source_used": "web_search"}
+    try:
+        response = await get_llm().ainvoke(messages)
+        answer = response.content if hasattr(response, "content") else str(response)
+        return {"messages": [AIMessage(content=answer)], "source_used": "web_search"}
+    except Exception as e:
+        logger.error("[Web Generation Error] LLM synthesis failed: %s", e, exc_info=True)
+        return {
+            "messages": [
+                AIMessage(
+                    content="I apologize, but I am currently unable to complete your request due to a temporary service issue. Please try again shortly."
+                )
+            ],
+            "source_used": "insufficient_evidence",
+        }
 
 
 async def direct_answer(state: AgentState) -> dict[str, Any]:
@@ -466,9 +368,18 @@ async def direct_answer(state: AgentState) -> dict[str, Any]:
     prompt = DIRECT_ANSWER_PROMPT_TEMPLATE.format(
         system_prompt=CUSTOMER_SUPPORT_SYSTEM_PROMPT, history=history, question=question
     )
-    response = await get_llm().ainvoke(prompt)
-    answer = response.content if hasattr(response, "content") else str(response)
-    return {"messages": [AIMessage(content=answer)], "source_used": "direct"}
+    try:
+        response = await get_llm().ainvoke(prompt)
+        answer = response.content if hasattr(response, "content") else str(response)
+        return {"messages": [AIMessage(content=answer)], "source_used": "direct"}
+    except Exception as e:
+        logger.error("[Direct Answer Error] LLM generation failed: %s", e, exc_info=True)
+        return {
+            "messages": [
+                AIMessage(content="Hello! How can I assist you with your customer support inquiry?")
+            ],
+            "source_used": "direct",
+        }
 
 
 async def answer_insufficient(state: AgentState) -> dict[str, Any]:
@@ -478,6 +389,17 @@ async def answer_insufficient(state: AgentState) -> dict[str, Any]:
     prompt = INSUFFICIENT_EVIDENCE_PROMPT_TEMPLATE.format(
         system_prompt=CUSTOMER_SUPPORT_SYSTEM_PROMPT, history=history, question=question
     )
-    response = await get_llm().ainvoke(prompt)
-    answer = response.content if hasattr(response, "content") else str(response)
-    return {"messages": [AIMessage(content=answer)], "source_used": "insufficient_evidence"}
+    try:
+        response = await get_llm().ainvoke(prompt)
+        answer = response.content if hasattr(response, "content") else str(response)
+        return {"messages": [AIMessage(content=answer)], "source_used": "insufficient_evidence"}
+    except Exception as e:
+        logger.error("[Insufficient Evidence Error] LLM generation failed: %s", e, exc_info=True)
+        return {
+            "messages": [
+                AIMessage(
+                    content="I apologize, but our records do not have sufficient information to answer your inquiry. Please contact our support team via Live Chat or submit a support ticket for further assistance."
+                )
+            ],
+            "source_used": "insufficient_evidence",
+        }

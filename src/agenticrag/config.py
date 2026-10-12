@@ -21,6 +21,7 @@ class Settings(BaseSettings):
         default="", validation_alias="API_KEY"
     )  # Optional secret for client auth; unset means public
     require_api_key: bool = Field(default=False, validation_alias="REQUIRE_API_KEY")
+    environment: str = Field(default="development", validation_alias="ENVIRONMENT")
 
     index_name: str = Field(default="industry-agentic-rag-kb", validation_alias="INDEX_NAME")
     namespace: str = Field(default="bitext-support", validation_alias="NAMESPACE")
