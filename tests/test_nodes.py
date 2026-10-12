@@ -58,6 +58,48 @@ async def test_retrieve_kb_none_retriever_sets_flag():
 
 
 @pytest.mark.asyncio
+async def test_retrieve_kb_runs_in_worker_thread():
+    """Verifies Pinecone calls run in asyncio.to_thread and not on the main event-loop thread."""
+    import asyncio
+    import threading
+
+    state = {"current_query": "shipping info"}
+    caller_threads = []
+
+    def fake_search(*args, **kwargs):
+        caller_threads.append(threading.current_thread())
+        return [(Document(page_content="Free shipping", metadata={"source": "faq"}), 0.9)]
+
+    mock_vs = MagicMock()
+    mock_vs.similarity_search_with_score.side_effect = fake_search
+
+    with patch("agenticrag.nodes.get_vectorstore", return_value=mock_vs):
+        # Concurrently run retrieve_kb and an async event loop task
+        async def concurrent_task():
+            await asyncio.sleep(0.01)
+            return "done"
+
+        kb_result, task_result = await asyncio.gather(
+            retrieve_kb(state),
+            concurrent_task(),
+        )
+
+        assert task_result == "done"
+        assert len(kb_result["kb_docs"]) == 1
+        assert len(caller_threads) == 1
+        # The blocking search executed on a worker thread, not the main thread
+        assert caller_threads[0] != threading.main_thread()
+
+
+def test_warm_up_clients_handles_missing_keys_gracefully():
+    """warm_up_clients runs safely without throwing exceptions when keys are absent."""
+    from agenticrag.clients import warm_up_clients
+
+    # Should not raise exception
+    warm_up_clients()
+
+
+@pytest.mark.asyncio
 async def test_grade_kb_evidence_fallback_on_exception():
     state = {
         "messages": [HumanMessage(content="What is the shipping cost?")],

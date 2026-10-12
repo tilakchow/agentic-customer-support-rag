@@ -1,3 +1,4 @@
+import asyncio
 import hmac
 import logging
 import re
@@ -13,7 +14,7 @@ from slowapi.util import get_remote_address
 from starlette.middleware.cors import CORSMiddleware
 
 from agenticrag.auth import verify_api_key
-from agenticrag.clients import get_retriever
+from agenticrag.clients import get_retriever, warm_up_clients
 from agenticrag.config import get_settings
 from agenticrag.constants import DATASET_NAME, EMBEDDING_DIM, KB_SAMPLE_SIZE, RETRIEVER_K
 from agenticrag.graph import create_agent
@@ -64,6 +65,9 @@ async def lifespan(app: FastAPI):
         raise RuntimeError(
             "CHECKPOINT_DB must be set in production, or set ALLOW_IN_MEMORY_CHECKPOINTS=true for ephemeral testing."
         )
+
+    # Warm up AI and embedding models in a worker thread to avoid cold starts
+    await asyncio.to_thread(warm_up_clients)
 
     # Build the correct checkpointer and compile the agent graph ONCE at startup.
     # The AsyncSqliteSaver connection is managed here and closed cleanly on shutdown.

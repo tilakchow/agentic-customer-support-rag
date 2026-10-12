@@ -1,6 +1,7 @@
 """Lazy factory functions for external AI, vector store, and search service clients."""
 
 import logging
+import threading
 import time
 
 from agenticrag.config import get_settings
@@ -17,21 +18,29 @@ _retriever_client = None
 _last_retriever_failure_time: float = 0.0
 RETRIEVER_BACKOFF_SECONDS: float = 30.0
 
+_llm_lock = threading.Lock()
+_web_search_lock = threading.Lock()
+_embeddings_lock = threading.Lock()
+_vectorstore_lock = threading.Lock()
+_retriever_lock = threading.Lock()
+
 
 def get_llm():
     """Lazily initializes ChatGroq LLM client with timeout and max_retries configured."""
     global _llm_client
     if _llm_client is None:
-        from langchain_groq import ChatGroq
+        with _llm_lock:
+            if _llm_client is None:
+                from langchain_groq import ChatGroq
 
-        settings = get_settings()
-        _llm_client = ChatGroq(
-            model=settings.groq_model,
-            temperature=0,
-            api_key=settings.groq_api_key or None,
-            request_timeout=settings.llm_timeout,
-            max_retries=settings.llm_max_retries,
-        )
+                settings = get_settings()
+                _llm_client = ChatGroq(
+                    model=settings.groq_model,
+                    temperature=0,
+                    api_key=settings.groq_api_key or None,
+                    request_timeout=settings.llm_timeout,
+                    max_retries=settings.llm_max_retries,
+                )
     return _llm_client
 
 
@@ -49,16 +58,18 @@ def get_web_search():
     """Lazily initializes Tavily search client."""
     global _web_search_client
     if _web_search_client is None:
-        from langchain_tavily import TavilySearch
+        with _web_search_lock:
+            if _web_search_client is None:
+                from langchain_tavily import TavilySearch
 
-        settings = get_settings()
-        _web_search_client = TavilySearch(
-            max_results=5,
-            topic="general",
-            include_answer=True,
-            include_raw_content=False,
-            tavily_api_key=settings.tavily_api_key or None,
-        )
+                settings = get_settings()
+                _web_search_client = TavilySearch(
+                    max_results=5,
+                    topic="general",
+                    include_answer=True,
+                    include_raw_content=False,
+                    tavily_api_key=settings.tavily_api_key or None,
+                )
     return _web_search_client
 
 
@@ -66,13 +77,15 @@ def get_embeddings():
     """Lazily initializes FastEmbed embeddings client."""
     global _embeddings_client
     if _embeddings_client is None:
-        from langchain_community.embeddings.fastembed import FastEmbedEmbeddings
+        with _embeddings_lock:
+            if _embeddings_client is None:
+                from langchain_community.embeddings.fastembed import FastEmbedEmbeddings
 
-        settings = get_settings()
-        kwargs = {"model_name": settings.embedding_model}
-        if settings.fastembed_cache_dir:
-            kwargs["cache_dir"] = settings.fastembed_cache_dir
-        _embeddings_client = FastEmbedEmbeddings(**kwargs)
+                settings = get_settings()
+                kwargs = {"model_name": settings.embedding_model}
+                if settings.fastembed_cache_dir:
+                    kwargs["cache_dir"] = settings.fastembed_cache_dir
+                _embeddings_client = FastEmbedEmbeddings(**kwargs)
     return _embeddings_client
 
 
@@ -85,22 +98,25 @@ def get_vectorstore():
     if not settings.pinecone_api_key:
         logger.warning("PINECONE_API_KEY is not set. Pinecone vectorstore is disabled.")
         return None
-    if time.time() - _last_retriever_failure_time < RETRIEVER_BACKOFF_SECONDS:
-        return None
-    try:
-        from langchain_pinecone import PineconeVectorStore
-        from pinecone import Pinecone
+    with _vectorstore_lock:
+        if _vectorstore_client is not None:
+            return _vectorstore_client
+        if time.time() - _last_retriever_failure_time < RETRIEVER_BACKOFF_SECONDS:
+            return None
+        try:
+            from langchain_pinecone import PineconeVectorStore
+            from pinecone import Pinecone
 
-        pc = Pinecone(api_key=settings.pinecone_api_key)
-        index = pc.Index(settings.index_name)
-        _vectorstore_client = PineconeVectorStore(
-            index=index, embedding=get_embeddings(), namespace=settings.namespace
-        )
-        _last_retriever_failure_time = 0.0
-    except Exception as e:
-        logger.warning("Pinecone index connection not ready or accessible: %s", e)
-        _last_retriever_failure_time = time.time()
-        _vectorstore_client = None
+            pc = Pinecone(api_key=settings.pinecone_api_key)
+            index = pc.Index(settings.index_name)
+            _vectorstore_client = PineconeVectorStore(
+                index=index, embedding=get_embeddings(), namespace=settings.namespace
+            )
+            _last_retriever_failure_time = 0.0
+        except Exception as e:
+            logger.warning("Pinecone index connection not ready or accessible: %s", e)
+            _last_retriever_failure_time = time.time()
+            _vectorstore_client = None
     return _vectorstore_client
 
 
@@ -109,11 +125,30 @@ def get_retriever():
     global _retriever_client
     if _retriever_client is not None:
         return _retriever_client
-    vs = get_vectorstore()
-    if vs is None:
-        return None
-    settings = get_settings()
-    _retriever_client = vs.as_retriever(
-        search_kwargs={"k": RETRIEVER_K, "namespace": settings.namespace}
-    )
+    with _retriever_lock:
+        if _retriever_client is not None:
+            return _retriever_client
+        vs = get_vectorstore()
+        if vs is None:
+            return None
+        settings = get_settings()
+        _retriever_client = vs.as_retriever(
+            search_kwargs={"k": RETRIEVER_K, "namespace": settings.namespace}
+        )
     return _retriever_client
+
+
+def warm_up_clients() -> None:
+    """Pre-initializes LLM and embeddings to prevent cold-start event loop blocking."""
+    settings = get_settings()
+    if settings.groq_api_key:
+        try:
+            get_llm()
+            logger.info("LLM client warmed up successfully.")
+        except Exception as e:
+            logger.debug("LLM warmup skipped or non-fatal error: %s", e)
+    try:
+        get_embeddings()
+        logger.info("Embeddings model warmed up successfully.")
+    except Exception as e:
+        logger.debug("Embeddings warmup skipped or non-fatal error: %s", e)
