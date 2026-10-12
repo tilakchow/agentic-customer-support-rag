@@ -12,6 +12,7 @@ logger = logging.getLogger(__name__)
 _llm_client = None
 _web_search_client = None
 _embeddings_client = None
+_vectorstore_client = None
 _retriever_client = None
 _last_retriever_failure_time: float = 0.0
 RETRIEVER_BACKOFF_SECONDS: float = 30.0
@@ -70,20 +71,22 @@ def get_embeddings():
     if _embeddings_client is None:
         from langchain_community.embeddings.fastembed import FastEmbedEmbeddings
         settings = get_settings()
-        _embeddings_client = FastEmbedEmbeddings(model_name=settings.embedding_model)
+        kwargs = {"model_name": settings.embedding_model}
+        if settings.fastembed_cache_dir:
+            kwargs["cache_dir"] = settings.fastembed_cache_dir
+        _embeddings_client = FastEmbedEmbeddings(**kwargs)
     return _embeddings_client
 
 
-def get_retriever():
-    """Lazily connects to Pinecone vector store with connection failure backoff."""
-    global _retriever_client, _last_retriever_failure_time
-    if _retriever_client is not None:
-        return _retriever_client
+def get_vectorstore():
+    """Lazily connects to Pinecone vector store."""
+    global _vectorstore_client, _last_retriever_failure_time
+    if _vectorstore_client is not None:
+        return _vectorstore_client
     settings = get_settings()
     if not settings.pinecone_api_key:
-        logger.warning("PINECONE_API_KEY is not set. Pinecone retriever is disabled.")
+        logger.warning("PINECONE_API_KEY is not set. Pinecone vectorstore is disabled.")
         return None
-    # Short backoff so Pinecone outage doesn't trigger reconnect on every request
     if time.time() - _last_retriever_failure_time < RETRIEVER_BACKOFF_SECONDS:
         return None
     try:
@@ -92,17 +95,29 @@ def get_retriever():
 
         pc = Pinecone(api_key=settings.pinecone_api_key)
         index = pc.Index(settings.index_name)
-        vectorstore = PineconeVectorStore(
+        _vectorstore_client = PineconeVectorStore(
             index=index,
             embedding=get_embeddings(),
             namespace=settings.namespace
-        )
-        _retriever_client = vectorstore.as_retriever(
-            search_kwargs={"k": RETRIEVER_K, "namespace": settings.namespace}
         )
         _last_retriever_failure_time = 0.0
     except Exception as e:
         logger.warning("Pinecone index connection not ready or accessible: %s", e)
         _last_retriever_failure_time = time.time()
-        _retriever_client = None
+        _vectorstore_client = None
+    return _vectorstore_client
+
+
+def get_retriever():
+    """Lazily connects to Pinecone vector store with connection failure backoff."""
+    global _retriever_client
+    if _retriever_client is not None:
+        return _retriever_client
+    vs = get_vectorstore()
+    if vs is None:
+        return None
+    settings = get_settings()
+    _retriever_client = vs.as_retriever(
+        search_kwargs={"k": RETRIEVER_K, "namespace": settings.namespace}
+    )
     return _retriever_client

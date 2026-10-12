@@ -1,6 +1,6 @@
-from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
 
+from agenticrag.config import get_settings
 from agenticrag.nodes import (
     AgentState,
     NodeName,
@@ -78,9 +78,19 @@ def create_agent():
     workflow.add_edge(NodeName.DIRECT_ANSWER.value, END)
     workflow.add_edge(NodeName.ANSWER_INSUFFICIENT.value, END)
 
-    # Memory checkpointer to remember chat history
-    memory = MemorySaver()
-    return workflow.compile(checkpointer=memory)
+    settings = get_settings()
+    if settings.checkpoint_db:
+        import sqlite3
+
+        from langgraph.checkpoint.sqlite import SqliteSaver
+        conn = sqlite3.connect(settings.checkpoint_db, check_same_thread=False)
+        checkpointer = SqliteSaver(conn)
+    else:
+        # In-memory checkpointer (dev-only; for production persistence set CHECKPOINT_DB)
+        from langgraph.checkpoint.memory import MemorySaver
+        checkpointer = MemorySaver()
+
+    return workflow.compile(checkpointer=checkpointer)
 
 
 def get_agent_app():

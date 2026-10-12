@@ -19,6 +19,10 @@ COPY src/ ./src/
 # Install the project itself
 RUN uv sync --frozen --no-dev
 
+# Set explicit cache directory and pre-download FastEmbed model during build
+ENV FASTEMBED_CACHE_PATH=/app/.cache/fastembed
+RUN /app/.venv/bin/python -c "from fastembed import TextEmbedding; TextEmbedding(model_name='sentence-transformers/all-MiniLM-L6-v2', cache_dir='/app/.cache/fastembed')"
+
 # Create non-root user and set permissions
 RUN useradd -m -u 1000 appuser && chown -R appuser:appuser /app
 USER appuser

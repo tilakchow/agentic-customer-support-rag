@@ -40,6 +40,9 @@ class Settings(BaseSettings):
     max_message_length: int = 1500
     max_thread_history: int = 10
     web_fallback_enabled: bool = Field(default=True, validation_alias="WEB_FALLBACK_ENABLED")
+    skip_grader_score: float | None = Field(default=None, validation_alias="SKIP_GRADER_SCORE")
+    checkpoint_db: str | None = Field(default=None, validation_alias="CHECKPOINT_DB")
+    fastembed_cache_dir: str | None = Field(default=None, validation_alias="FASTEMBED_CACHE_PATH")
     kb_sample_size: int = Field(default=KB_SAMPLE_SIZE, validation_alias="KB_SAMPLE_SIZE")
     kb_seed: int = Field(default=42, validation_alias="KB_SEED")
 
