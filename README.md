@@ -20,7 +20,7 @@ app_port: 7860
 [![Pinecone](https://img.shields.io/badge/Pinecone-Vector_DB-000000.svg?logo=pinecone&logoColor=white)](https://pinecone.io)
 [![Groq](https://img.shields.io/badge/Groq-LPU_Inference-F55036.svg)](https://groq.com)
 [![Tavily](https://img.shields.io/badge/Tavily-Web_Search-4A90E2.svg)](https://tavily.com)
-[![Tests](https://img.shields.io/badge/Tests-20%20Passed-brightgreen.svg)](tests/)
+[![Tests](https://img.shields.io/badge/Tests-22%20Passed-brightgreen.svg)](tests/)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 </div>

@@ -95,10 +95,11 @@ app = FastAPI(
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
-# Configure CORS with strict explicit origins
+# Configure CORS with strict explicit origins plus Vercel deployment support
 app.add_middleware(
     CORSMiddleware,
     allow_origins=get_settings().allowed_origins,
+    allow_origin_regex=r"^https://.*\.vercel\.app$",
     allow_credentials=True,
     allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["*"],
@@ -149,6 +150,18 @@ class ChatResponse(BaseModel):
     response: str = Field(..., description="Assistant's response text")
     thread_id: str = Field(..., description="Active thread ID for conversational continuity")
     source_used: Optional[str] = Field(None, description="Data source used (private_kb, web_search, direct, etc.)")
+
+
+@app.get("/")
+def root():
+    """Root endpoint for status check and service discovery."""
+    return {
+        "status": "online",
+        "service": "Agentic-RAG Customer Support Backend",
+        "docs": "/docs",
+        "health": "/health",
+        "kb_info": "/kb/info"
+    }
 
 
 @app.get("/health")

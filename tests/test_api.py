@@ -22,6 +22,23 @@ def client():
     return TestClient(app)
 
 
+def test_root_endpoint(client):
+    response = client.get("/")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "online"
+    assert "service" in data
+
+
+def test_cors_vercel_allowed(client):
+    response = client.options("/health", headers={
+        "Origin": "https://agentic-customer-support-rag.vercel.app",
+        "Access-Control-Request-Method": "GET"
+    })
+    assert response.status_code == 200
+    assert response.headers.get("access-control-allow-origin") == "https://agentic-customer-support-rag.vercel.app"
+
+
 def test_health_check(client):
     response = client.get("/health")
     assert response.status_code == 200
