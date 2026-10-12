@@ -281,3 +281,36 @@ async def test_e2e_groq_failure_containment(agent_app):
 
         assert result["source_used"] == "insufficient_evidence"
         assert "temporary service issue" in str(result["messages"][-1].content)
+
+
+@pytest.mark.asyncio
+async def test_e2e_thread_messages_trimmed(agent_app, monkeypatch):
+    """Verifies that thread history is capped at max_thread_messages and graph continues running."""
+    import agenticrag.config as config_module
+    from agenticrag.config import Settings
+
+    custom_settings = Settings(max_thread_messages=4)
+    monkeypatch.setattr(config_module, "get_settings", lambda: custom_settings)
+    monkeypatch.setattr("agenticrag.state.get_settings", lambda: custom_settings)
+
+    with (
+        patch("agenticrag.nodes.get_router_llm") as mock_router,
+        patch("agenticrag.nodes.get_llm") as mock_llm,
+    ):
+        mock_router.return_value.ainvoke = AsyncMock(return_value=RouteDecision(route="direct"))
+        mock_llm.return_value.ainvoke = AsyncMock(return_value=AIMessage(content="Direct reply"))
+
+        cfg = {"configurable": {"thread_id": "test-trim-thread"}}
+        # First turn: 1 Human + 1 AI = 2 messages
+        res1 = await agent_app.ainvoke({"messages": [HumanMessage(content="Hello 1")]}, config=cfg)
+        assert len(res1["messages"]) == 2
+
+        # Second turn: +1 Human + 1 AI = 4 messages (reaches max 4)
+        res2 = await agent_app.ainvoke({"messages": [HumanMessage(content="Hello 2")]}, config=cfg)
+        assert len(res2["messages"]) == 4
+
+        # Third turn: +1 Human + 1 AI -> would be 6, but capped to last 4
+        res3 = await agent_app.ainvoke({"messages": [HumanMessage(content="Hello 3")]}, config=cfg)
+        assert len(res3["messages"]) == 4
+        assert res3["messages"][-1].content == "Direct reply"
+        assert res3["messages"][-2].content == "Hello 3"

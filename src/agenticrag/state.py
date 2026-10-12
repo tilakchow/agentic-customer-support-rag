@@ -1,17 +1,31 @@
 """Execution state schema passed across all LangGraph nodes."""
 
-from typing import Annotated
+from typing import Annotated, Any, cast
 
 from langchain_core.documents import Document
 from langchain_core.messages import AnyMessage
 from langgraph.graph.message import add_messages
 from typing_extensions import TypedDict
 
+from agenticrag.config import get_settings
+
+
+def trim_messages_reducer(
+    existing: Any,
+    incoming: Any,
+) -> list[AnyMessage]:
+    """Appends messages and retains at most MAX_THREAD_MESSAGES to prevent memory leaks."""
+    updated: list[AnyMessage] = cast(list[AnyMessage], add_messages(existing, incoming))
+    max_msgs = get_settings().max_thread_messages
+    if max_msgs > 0 and len(updated) > max_msgs:
+        return updated[-max_msgs:]
+    return updated
+
 
 class AgentState(TypedDict):
     """Execution state schema passed across all LangGraph nodes."""
 
-    messages: Annotated[list[AnyMessage], add_messages]
+    messages: Annotated[list[AnyMessage], trim_messages_reducer]
     current_query: str
     kb_docs: list[Document]
     kb_retrieval_failed: bool

@@ -313,3 +313,57 @@ def test_kb_search_endpoint_success(client, monkeypatch):
     assert len(data["results"]) == 1
     assert "return window is 30 days" in data["results"][0]["content"]
     assert data["results"][0]["metadata"]["source"] == "kb-policy"
+
+
+def test_lifespan_refuses_in_memory_checkpointer_in_production(monkeypatch):
+    """In production mode with no CHECKPOINT_DB and ALLOW_IN_MEMORY_CHECKPOINTS false, startup fails."""
+    from fastapi import FastAPI
+
+    from agenticrag.api import lifespan
+    from agenticrag.config import Settings
+
+    prod_settings = Settings(
+        environment="production",
+        api_key="valid-key",
+        checkpoint_db=None,
+        allow_in_memory_checkpoints=False,
+    )
+    monkeypatch.setattr(api_module, "get_settings", lambda: prod_settings)
+
+    dummy_app = FastAPI()
+    with pytest.raises(
+        RuntimeError,
+        match="CHECKPOINT_DB must be set in production, or set ALLOW_IN_MEMORY_CHECKPOINTS=true for ephemeral testing.",
+    ):
+        import asyncio
+
+        async def run_lifespan():
+            async with lifespan(dummy_app):
+                pass
+
+        asyncio.run(run_lifespan())
+
+
+def test_lifespan_allows_in_memory_checkpointer_with_flag(monkeypatch):
+    """In production mode, ALLOW_IN_MEMORY_CHECKPOINTS=true allows ephemeral in-memory startup."""
+    from fastapi import FastAPI
+
+    from agenticrag.api import lifespan
+    from agenticrag.config import Settings
+
+    prod_settings = Settings(
+        environment="production",
+        api_key="valid-key",
+        checkpoint_db=None,
+        allow_in_memory_checkpoints=True,
+    )
+    monkeypatch.setattr(api_module, "get_settings", lambda: prod_settings)
+
+    dummy_app = FastAPI()
+    import asyncio
+
+    async def run_lifespan():
+        async with lifespan(dummy_app):
+            assert hasattr(dummy_app.state, "agent_app")
+
+    asyncio.run(run_lifespan())

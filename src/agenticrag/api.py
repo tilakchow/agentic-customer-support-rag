@@ -60,6 +60,11 @@ async def lifespan(app: FastAPI):
         )
     settings.validate_runtime_keys(strict=False)
 
+    if not settings.checkpoint_db and not settings.allow_in_memory_checkpoints:
+        raise RuntimeError(
+            "CHECKPOINT_DB must be set in production, or set ALLOW_IN_MEMORY_CHECKPOINTS=true for ephemeral testing."
+        )
+
     # Build the correct checkpointer and compile the agent graph ONCE at startup.
     # The AsyncSqliteSaver connection is managed here and closed cleanly on shutdown.
     if settings.checkpoint_db:
@@ -70,7 +75,10 @@ async def lifespan(app: FastAPI):
             checkpointer = AsyncSqliteSaver(conn)
             app.state.agent_app = create_agent(checkpointer=checkpointer)
 
-            logger.info("Agentic-RAG backend startup complete (SQLite checkpointer: %s).", settings.checkpoint_db)
+            logger.info(
+                "Agentic-RAG backend startup complete (SQLite checkpointer: %s).",
+                settings.checkpoint_db,
+            )
             yield
             logger.info("Agentic-RAG backend shutdown complete (SQLite connection closed).")
     else:

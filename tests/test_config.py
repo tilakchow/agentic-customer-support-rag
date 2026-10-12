@@ -119,3 +119,29 @@ def test_settings_validate_runtime_keys_strict_raises():
     s = Settings(groq_api_key="", tavily_api_key="", pinecone_api_key="")
     with pytest.raises(RuntimeError, match="Missing required environment variables"):
         s.validate_runtime_keys(strict=True)
+
+
+def test_settings_allow_in_memory_checkpoints_defaults(monkeypatch):
+    """allow_in_memory_checkpoints defaults to True in dev and False in prod."""
+    monkeypatch.setenv("ENVIRONMENT", "development")
+    s_dev = Settings()
+    assert s_dev.allow_in_memory_checkpoints is True
+
+    monkeypatch.setenv("ENVIRONMENT", "production")
+    s_prod = Settings()
+    assert s_prod.allow_in_memory_checkpoints is False
+
+
+def test_settings_allow_in_memory_checkpoints_override(monkeypatch):
+    """Explicit ALLOW_IN_MEMORY_CHECKPOINTS overrides environment default."""
+    monkeypatch.setenv("ENVIRONMENT", "production")
+    monkeypatch.setenv("ALLOW_IN_MEMORY_CHECKPOINTS", "true")
+    s = Settings()
+    assert s.allow_in_memory_checkpoints is True
+
+
+def test_settings_max_thread_messages_from_env(monkeypatch):
+    """MAX_THREAD_MESSAGES env var parses correctly."""
+    monkeypatch.setenv("MAX_THREAD_MESSAGES", "50")
+    s = Settings()
+    assert s.max_thread_messages == 50
