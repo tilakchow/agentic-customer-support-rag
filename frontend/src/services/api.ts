@@ -32,16 +32,12 @@ export interface StreamCallbacks {
   onError?: (error: string) => void
 }
 
-// Use VITE_API_URL if set; otherwise default to deployed Render backend in production, and localhost in dev
+// Public client configuration: Backend master keys must never be shipped in public browser bundles.
+// If backend auth is required in production, route client requests via an authenticated gateway/proxy.
 const API_BASE = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? "https://agentic-customer-support-rag.onrender.com" : "http://localhost:8000");
-const VITE_API_KEY = import.meta.env.VITE_API_KEY || "";
 
 function getHeaders(extraHeaders: Record<string, string> = {}): Record<string, string> {
-  const headers: Record<string, string> = { ...extraHeaders };
-  if (VITE_API_KEY) {
-    headers["X-API-Key"] = VITE_API_KEY;
-  }
-  return headers;
+  return { ...extraHeaders };
 }
 
 export async function sendMessage(req: ChatRequest): Promise<ChatResponse> {

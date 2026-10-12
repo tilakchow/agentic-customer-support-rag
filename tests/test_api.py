@@ -246,43 +246,37 @@ def test_production_environment_refuses_startup_without_api_key(monkeypatch):
         asyncio.run(run_lifespan())
 
 
-def test_get_client_rate_limit_key_resolution():
-    """Verifies that rate limit key properly prioritizes API key, X-Forwarded-For, X-Real-IP, and client IP."""
+def test_get_client_rate_limit_key_resolution(monkeypatch):
+    """Verifies that rate limit key properly verifies API keys against spoofing and resolves client IP."""
     from starlette.requests import Request
 
     from agenticrag.api import get_client_rate_limit_key
+    from agenticrag.config import Settings
 
-    # 1. API key header takes precedence
-    req_with_key = Request(
+    # Configure server with genuine secret
+    monkeypatch.setattr(api_module, "get_settings", lambda: Settings(api_key="secret-token-xyz"))
+
+    # 1. Genuine API key receives dedicated bucket
+    req_valid_key = Request(
         scope={
             "type": "http",
-            "headers": [(b"x-api-key", b"test-client-key-123"), (b"x-forwarded-for", b"10.0.0.1")],
+            "headers": [(b"x-api-key", b"secret-token-xyz")],
             "client": ("192.168.1.1", 12345),
         }
     )
-    assert get_client_rate_limit_key(req_with_key) == "key:test-client-key-123"
+    assert get_client_rate_limit_key(req_valid_key) == "key:secret-token-xyz"
 
-    # 2. X-Forwarded-For takes precedence over direct client IP behind proxies
-    req_with_forwarded = Request(
+    # 2. Fake / spoofed API key is NOT trusted and falls back to client IP
+    req_fake_key = Request(
         scope={
             "type": "http",
-            "headers": [(b"x-forwarded-for", b"203.0.113.195, 70.41.3.18")],
-            "client": ("10.0.0.1", 12345),
+            "headers": [(b"x-api-key", b"fake-random-key")],
+            "client": ("192.168.1.1", 12345),
         }
     )
-    assert get_client_rate_limit_key(req_with_forwarded) == "ip:203.0.113.195"
+    assert get_client_rate_limit_key(req_fake_key) == "192.168.1.1"
 
-    # 3. X-Real-IP takes precedence if X-Forwarded-For is missing
-    req_with_real_ip = Request(
-        scope={
-            "type": "http",
-            "headers": [(b"x-real-ip", b"198.51.100.42")],
-            "client": ("10.0.0.1", 12345),
-        }
-    )
-    assert get_client_rate_limit_key(req_with_real_ip) == "ip:198.51.100.42"
-
-    # 4. Direct client host fallback when no proxy headers
+    # 3. Direct client host resolution
     req_direct = Request(
         scope={
             "type": "http",
@@ -290,7 +284,16 @@ def test_get_client_rate_limit_key_resolution():
             "client": ("192.0.2.1", 12345),
         }
     )
-    assert get_client_rate_limit_key(req_direct) == "ip:192.0.2.1"
+    assert get_client_rate_limit_key(req_direct) == "192.0.2.1"
+
+
+def test_settings_allowed_origins_from_env(monkeypatch):
+    """Verifies that comma-separated ALLOWED_ORIGINS string in env parses cleanly without NoDecode errors."""
+    from agenticrag.config import Settings
+
+    monkeypatch.setenv("ALLOWED_ORIGINS", "http://app.example.com, https://portal.example.com")
+    settings = Settings()
+    assert settings.allowed_origins == ["http://app.example.com", "https://portal.example.com"]
 
 
 def test_kb_search_endpoint_success(client, monkeypatch):

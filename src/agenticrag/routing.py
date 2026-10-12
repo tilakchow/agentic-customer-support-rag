@@ -74,13 +74,9 @@ def is_proprietary_policy_query(query: str) -> bool:
     q = query.lower()
     policy_keywords = [
         "policy",
-        "return policy",
-        "refund policy",
-        "cancellation policy",
-        "warranty policy",
-        "exchange policy",
-        "guarantee policy",
+        "warranty",
         "terms of service",
+        "terms and conditions",
     ]
     return any(kw in q for kw in policy_keywords)
 

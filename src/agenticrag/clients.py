@@ -45,11 +45,6 @@ def get_grader_llm():
     return get_llm().with_structured_output(EvidenceGrade, method="json_mode")
 
 
-# For backwards compatibility with any existing imports
-get_kb_grader_llm = get_grader_llm
-get_web_grader_llm = get_grader_llm
-
-
 def get_web_search():
     """Lazily initializes Tavily search client."""
     global _web_search_client

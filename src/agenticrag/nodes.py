@@ -301,6 +301,27 @@ async def rewrite_query(state: AgentState) -> dict[str, Any]:
         return {"current_query": question, "retry_count": retry_count}
 
 
+DEFAULT_UNAVAILABLE_APOLOGY = "I apologize, but I am currently unable to complete your request due to a temporary service issue. Please try again shortly."
+
+
+async def _generate_support_message(
+    prompt_or_messages: Any, fallback_text: str, source_used: str
+) -> dict[str, Any]:
+    """Executes LLM synthesis with error containment and graceful customer fallback."""
+    try:
+        response = await get_llm().ainvoke(prompt_or_messages)
+        content = response.content if hasattr(response, "content") else str(response)
+        return {"messages": [AIMessage(content=str(content))], "source_used": source_used}
+    except Exception as e:
+        logger.error("[%s Error] LLM generation failed: %s", source_used, e, exc_info=True)
+        target_source = (
+            "insufficient_evidence"
+            if source_used in ("private_kb", "web_search", "insufficient_evidence")
+            else source_used
+        )
+        return {"messages": [AIMessage(content=fallback_text)], "source_used": target_source}
+
+
 async def generate_from_kb(state: AgentState) -> dict[str, Any]:
     """Synthesizes customer response grounded in retrieved internal knowledge base documents."""
     question = get_latest_question(state)
@@ -317,20 +338,7 @@ async def generate_from_kb(state: AgentState) -> dict[str, Any]:
         question=question,
     )
     messages = [SystemMessage(content=system_text), HumanMessage(content=human_text)]
-    try:
-        response = await get_llm().ainvoke(messages)
-        answer = response.content if hasattr(response, "content") else str(response)
-        return {"messages": [AIMessage(content=answer)], "source_used": "private_kb"}
-    except Exception as e:
-        logger.error("[KB Generation Error] LLM synthesis failed: %s", e, exc_info=True)
-        return {
-            "messages": [
-                AIMessage(
-                    content="I apologize, but I am currently unable to complete your request due to a temporary service issue. Please try again shortly."
-                )
-            ],
-            "source_used": "insufficient_evidence",
-        }
+    return await _generate_support_message(messages, DEFAULT_UNAVAILABLE_APOLOGY, "private_kb")
 
 
 async def generate_from_web(state: AgentState) -> dict[str, Any]:
@@ -345,20 +353,7 @@ async def generate_from_web(state: AgentState) -> dict[str, Any]:
         question=question,
     )
     messages = [SystemMessage(content=system_text), HumanMessage(content=human_text)]
-    try:
-        response = await get_llm().ainvoke(messages)
-        answer = response.content if hasattr(response, "content") else str(response)
-        return {"messages": [AIMessage(content=answer)], "source_used": "web_search"}
-    except Exception as e:
-        logger.error("[Web Generation Error] LLM synthesis failed: %s", e, exc_info=True)
-        return {
-            "messages": [
-                AIMessage(
-                    content="I apologize, but I am currently unable to complete your request due to a temporary service issue. Please try again shortly."
-                )
-            ],
-            "source_used": "insufficient_evidence",
-        }
+    return await _generate_support_message(messages, DEFAULT_UNAVAILABLE_APOLOGY, "web_search")
 
 
 async def direct_answer(state: AgentState) -> dict[str, Any]:
@@ -368,18 +363,9 @@ async def direct_answer(state: AgentState) -> dict[str, Any]:
     prompt = DIRECT_ANSWER_PROMPT_TEMPLATE.format(
         system_prompt=CUSTOMER_SUPPORT_SYSTEM_PROMPT, history=history, question=question
     )
-    try:
-        response = await get_llm().ainvoke(prompt)
-        answer = response.content if hasattr(response, "content") else str(response)
-        return {"messages": [AIMessage(content=answer)], "source_used": "direct"}
-    except Exception as e:
-        logger.error("[Direct Answer Error] LLM generation failed: %s", e, exc_info=True)
-        return {
-            "messages": [
-                AIMessage(content="Hello! How can I assist you with your customer support inquiry?")
-            ],
-            "source_used": "direct",
-        }
+    return await _generate_support_message(
+        prompt, "Hello! How can I assist you with your customer support inquiry?", "direct"
+    )
 
 
 async def answer_insufficient(state: AgentState) -> dict[str, Any]:
@@ -389,17 +375,5 @@ async def answer_insufficient(state: AgentState) -> dict[str, Any]:
     prompt = INSUFFICIENT_EVIDENCE_PROMPT_TEMPLATE.format(
         system_prompt=CUSTOMER_SUPPORT_SYSTEM_PROMPT, history=history, question=question
     )
-    try:
-        response = await get_llm().ainvoke(prompt)
-        answer = response.content if hasattr(response, "content") else str(response)
-        return {"messages": [AIMessage(content=answer)], "source_used": "insufficient_evidence"}
-    except Exception as e:
-        logger.error("[Insufficient Evidence Error] LLM generation failed: %s", e, exc_info=True)
-        return {
-            "messages": [
-                AIMessage(
-                    content="I apologize, but our records do not have sufficient information to answer your inquiry. Please contact our support team via Live Chat or submit a support ticket for further assistance."
-                )
-            ],
-            "source_used": "insufficient_evidence",
-        }
+    fallback = "I apologize, but our records do not have sufficient information to answer your inquiry. Please contact our support team via Live Chat or submit a support ticket for further assistance."
+    return await _generate_support_message(prompt, fallback, "insufficient_evidence")

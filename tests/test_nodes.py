@@ -153,14 +153,41 @@ def test_decide_after_kb_grade_proprietary_policy_skips_web():
     assert decide_after_kb_grade(state) == "answer_insufficient"
 
 
-def test_checkpoint_db_sqlite(tmp_path):
+@pytest.mark.asyncio
+async def test_checkpoint_db_sqlite(tmp_path):
+    import aiosqlite
+    from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
+
+    from agenticrag.schemas import RouteDecision
+
     db_file = str(tmp_path / "test_checkpoints.sqlite")
-    with patch("agenticrag.graph.get_settings") as mock_settings:
-        mock_settings.return_value.checkpoint_db = db_file
-        agent = create_agent()
-        assert agent is not None
-        assert hasattr(agent, "checkpointer")
-        assert agent.checkpointer.__class__.__name__ == "SqliteSaver"
+    conn = aiosqlite.connect(db_file)
+    saver = AsyncSqliteSaver(conn)
+
+    agent = create_agent(checkpointer=saver)
+    assert agent is not None
+
+    with (
+        patch("agenticrag.nodes.get_router_llm") as mock_router,
+        patch("agenticrag.nodes.get_llm") as mock_llm,
+    ):
+        mock_router.return_value.ainvoke = AsyncMock(return_value=RouteDecision(route="direct"))
+        mock_llm.return_value.ainvoke = AsyncMock(
+            return_value=AIMessage(content="Hello! Support answer saved to sqlite.")
+        )
+
+        config = {"configurable": {"thread_id": "test-sqlite-thread-1"}}
+        result = await agent.ainvoke(
+            {"messages": [HumanMessage(content="Hello from sqlite test")]}, config=config
+        )
+        assert result["source_used"] == "direct"
+        assert "sqlite" in str(result["messages"][-1].content)
+
+        # Verify state was persisted and can be retrieved asynchronously
+        state = await agent.aget_state(config)
+        assert len(state.values["messages"]) == 2
+
+    await conn.close()
 
 
 def test_retriever_backoff_on_failure():

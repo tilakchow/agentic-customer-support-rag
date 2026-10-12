@@ -53,6 +53,7 @@ USER appuser
 ENV PATH="/app/.venv/bin:$PATH"
 ENV FASTEMBED_CACHE_PATH=/app/.cache/fastembed
 ENV PYTHONUNBUFFERED=1
+ENV ENVIRONMENT=production
 
 # Expose default port (Hugging Face Spaces default 7860)
 EXPOSE 7860

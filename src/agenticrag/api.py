@@ -1,5 +1,4 @@
-"""Hardened FastAPI application with rate limiting, async concurrency, and streaming."""
-
+import hmac
 import logging
 import re
 import uuid
@@ -17,7 +16,7 @@ from agenticrag.auth import verify_api_key
 from agenticrag.clients import get_retriever
 from agenticrag.config import get_settings
 from agenticrag.constants import DATASET_NAME, EMBEDDING_DIM, KB_SAMPLE_SIZE, RETRIEVER_K
-from agenticrag.graph import get_agent_app
+from agenticrag.graph import create_agent, get_agent_app
 from agenticrag.models import ChatRequest, ChatResponse, KBSearchRequest
 from agenticrag.sse import stream_agent_generator
 
@@ -25,22 +24,19 @@ logger = logging.getLogger(__name__)
 
 
 def get_client_rate_limit_key(request: Request) -> str:
-    """Extracts rate limit identifier: API key if present, else real client IP behind reverse proxies."""
+    """Extracts rate limit identifier: verified API key if valid, otherwise Uvicorn-managed client IP."""
     api_key = request.headers.get("X-API-Key")
-    if api_key:
+    configured_key = get_settings().api_key
+    # Only assign a dedicated API key rate bucket if the key is genuine and matches configured secret
+    if (
+        api_key
+        and configured_key
+        and hmac.compare_digest(api_key.encode("utf-8"), configured_key.encode("utf-8"))
+    ):
         return f"key:{api_key.strip()}"
 
-    forwarded_for = request.headers.get("X-Forwarded-For")
-    if forwarded_for:
-        client_ip = forwarded_for.split(",")[0].strip()
-        if client_ip:
-            return f"ip:{client_ip}"
-
-    real_ip = request.headers.get("X-Real-IP")
-    if real_ip:
-        return f"ip:{real_ip.strip()}"
-
-    return f"ip:{get_remote_address(request)}"
+    # Use Uvicorn-managed client IP (which securely processes proxy headers based on forwarded-allow-ips)
+    return get_remote_address(request)
 
 
 # Initialize rate limiter with proxy-aware key tracking
@@ -64,10 +60,22 @@ async def lifespan(app: FastAPI):
         )
     settings.validate_runtime_keys(strict=False)
 
-    # Pre-compile the agent graph on startup
-    app.state.agent_app = get_agent_app()
+    # Pre-compile the agent graph on startup (with AsyncSqliteSaver if configured)
+    if settings.checkpoint_db:
+        import aiosqlite
+        from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
+
+        conn = aiosqlite.connect(settings.checkpoint_db)
+        checkpointer = AsyncSqliteSaver(conn)
+        app.state.checkpoint_conn = conn
+        app.state.agent_app = create_agent(checkpointer=checkpointer)
+    else:
+        app.state.agent_app = get_agent_app()
+
     logger.info("Agentic-RAG backend startup complete.")
     yield
+    if hasattr(app.state, "checkpoint_conn"):
+        await app.state.checkpoint_conn.close()
     logger.info("Agentic-RAG backend shutdown complete.")
 
 

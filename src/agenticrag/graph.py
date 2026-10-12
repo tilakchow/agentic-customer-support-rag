@@ -1,3 +1,5 @@
+from typing import Any
+
 from langgraph.graph import END, START, StateGraph
 
 from agenticrag.config import get_settings
@@ -22,7 +24,7 @@ from agenticrag.nodes import (
 _compiled_agent = None
 
 
-def create_agent():
+def create_agent(checkpointer: Any = None):
     workflow = StateGraph(AgentState)
 
     # Add Nodes using NodeName enum
@@ -79,19 +81,30 @@ def create_agent():
     workflow.add_edge(NodeName.ANSWER_INSUFFICIENT.value, END)
 
     settings = get_settings()
+    if checkpointer is not None:
+        return workflow.compile(checkpointer=checkpointer)
+
     if settings.checkpoint_db:
-        import sqlite3
+        import asyncio
 
-        from langgraph.checkpoint.sqlite import SqliteSaver
+        try:
+            asyncio.get_running_loop()
+            has_loop = True
+        except RuntimeError:
+            has_loop = False
 
-        conn = sqlite3.connect(settings.checkpoint_db, check_same_thread=False)
-        checkpointer = SqliteSaver(conn)
-    else:
-        # In-memory checkpointer (dev-only; for production persistence set CHECKPOINT_DB)
-        from langgraph.checkpoint.memory import MemorySaver
+        if has_loop:
+            import aiosqlite
+            from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
-        checkpointer = MemorySaver()
+            conn = aiosqlite.connect(settings.checkpoint_db)
+            checkpointer = AsyncSqliteSaver(conn)
+            return workflow.compile(checkpointer=checkpointer)
 
+    # In-memory checkpointer (dev-only or when loop is not yet running)
+    from langgraph.checkpoint.memory import MemorySaver
+
+    checkpointer = MemorySaver()
     return workflow.compile(checkpointer=checkpointer)
 
 

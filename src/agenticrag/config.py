@@ -2,9 +2,10 @@
 
 import logging
 from functools import lru_cache
+from typing import Annotated
 
 from pydantic import Field, field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 from agenticrag.constants import KB_SAMPLE_SIZE
 
@@ -35,7 +36,7 @@ class Settings(BaseSettings):
     tavily_timeout: float = Field(default=15.0, validation_alias="TAVILY_TIMEOUT")
 
     # Security & Policy Settings
-    allowed_origins: list[str] = [
+    allowed_origins: Annotated[list[str], NoDecode] = [
         "http://localhost:5173",
         "http://127.0.0.1:5173",
         "http://localhost:3000",
