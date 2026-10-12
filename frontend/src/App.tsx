@@ -239,6 +239,7 @@ export function App() {
             setActiveNode(undefined)
             setStatusMessage("")
             setLoading(false)
+            setMessages((prev) => prev.filter((msg) => msg.id !== assistantId || msg.content.length > 0))
           },
         }
       )

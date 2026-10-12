@@ -1,5 +1,4 @@
-"""Core LangGraph nodes and decision-making logic for Agentic Customer Support RAG."""
-
+import concurrent.futures
 import logging
 from enum import StrEnum
 from typing import Annotated, Any, Literal
@@ -15,6 +14,7 @@ from agenticrag.config import (
     get_llm,
     get_retriever,
     get_router_llm,
+    get_settings,
     get_web_grader_llm,
     get_web_search,
 )
@@ -115,6 +115,7 @@ class AgentState(TypedDict):
     messages: Annotated[list[AnyMessage], add_messages]
     current_query: str
     kb_docs: list[Document]
+    kb_retrieval_failed: bool
     web_results: str
     web_search_failed: bool
     kb_grade: str
@@ -164,15 +165,21 @@ def route_question(state: AgentState) -> dict[str, Any]:
     question = get_latest_question(state)
     history = get_conversation_history(state)
 
-    prompt = ROUTER_PROMPT_TEMPLATE.format(history=history, question=question)
-    decision = get_router_llm().invoke(prompt)
+    try:
+        prompt = ROUTER_PROMPT_TEMPLATE.format(history=history, question=question)
+        decision = get_router_llm().invoke(prompt)
+        route = decision.route
+        logger.info("[Router] Decision: %s for query: %s", route, question[:50])
+    except Exception as e:
+        logger.warning("[Router Error] Failed to route query (%s). Falling back to 'kb': %s", question[:50], e)
+        route = "kb"
 
-    logger.info("[Router] Decision: %s for query: %s", decision.route, question[:50])
     return {
         "current_query": question,
-        "route": decision.route,
+        "route": route,
         "retry_count": 0,
         "web_search_failed": False,
+        "kb_retrieval_failed": False,
     }
 
 
@@ -187,16 +194,22 @@ def retrieve_kb(state: AgentState) -> dict[str, Any]:
     """Queries Pinecone vector store using the current search query."""
     query = state.get("current_query", "")
     retriever_client = get_retriever()
+    kb_retrieval_failed = False
+    docs = []
     if retriever_client:
         try:
             docs = retriever_client.invoke(query)
         except Exception as e:
             logger.error("[KB Retriever Error]: %s", e, exc_info=True)
+            kb_retrieval_failed = True
             docs = []
     else:
+        logger.error("[KB Retriever Error]: Pinecone retriever client is unavailable.")
+        kb_retrieval_failed = True
         docs = []
-    logger.info("[KB Retriever] Retrieved: %d chunks for query: '%s'", len(docs), query[:50])
-    return {"kb_docs": docs}
+
+    logger.info("[KB Retriever] Retrieved: %d chunks for query: '%s' (failed=%s)", len(docs), query[:50], kb_retrieval_failed)
+    return {"kb_docs": docs, "kb_retrieval_failed": kb_retrieval_failed}
 
 
 def grade_kb_evidence(state: AgentState) -> dict[str, Any]:
@@ -207,18 +220,22 @@ def grade_kb_evidence(state: AgentState) -> dict[str, Any]:
         logger.info("[KB Grader] No docs retrieved. Defaulting to weak grade.")
         return {"kb_grade": "weak"}
 
-    context = "\n\n".join(
-        f"Source: {doc.metadata.get('source', 'unknown')}\n{doc.page_content}"
-        for doc in docs
-    )
+    try:
+        context = "\n\n".join(
+            f"Source: {doc.metadata.get('source', 'unknown')}\n{doc.page_content}"
+            for doc in docs
+        )
 
-    messages = [
-        SystemMessage(content=KB_GRADER_SYSTEM_PROMPT),
-        HumanMessage(content=KB_GRADER_HUMAN_TEMPLATE.format(question=question, context=context)),
-    ]
-    grade = get_kb_grader_llm().invoke(messages)
-    logger.info("[KB Grader] Evidence grade: %s", grade.grade)
-    return {"kb_grade": grade.grade}
+        messages = [
+            SystemMessage(content=KB_GRADER_SYSTEM_PROMPT),
+            HumanMessage(content=KB_GRADER_HUMAN_TEMPLATE.format(question=question, context=context)),
+        ]
+        grade = get_kb_grader_llm().invoke(messages)
+        logger.info("[KB Grader] Evidence grade: %s", grade.grade)
+        return {"kb_grade": grade.grade}
+    except Exception as e:
+        logger.warning("[KB Grader Error] Failed to grade KB evidence. Falling back to 'weak': %s", e)
+        return {"kb_grade": "weak"}
 
 
 def is_internal_contact_query(query: str) -> bool:
@@ -251,8 +268,11 @@ def search_web(state: AgentState) -> dict[str, Any]:
     """Executes external web search via Tavily. Catches errors safely to prevent error leak."""
     query = state.get("current_query", "")
     logger.info("[Tavily Search] Query: %s", query)
+    settings = get_settings()
     try:
-        result = get_web_search().invoke({"query": query})
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(get_web_search().invoke, {"query": query})
+            result = future.result(timeout=settings.tavily_timeout)
         if isinstance(result, dict):
             lines = []
             if result.get("answer"):
@@ -279,14 +299,18 @@ def grade_web_evidence(state: AgentState) -> dict[str, Any]:
     if not web_results:
         return {"web_grade": "weak"}
 
-    question = get_latest_question(state)
-    messages = [
-        SystemMessage(content=WEB_GRADER_SYSTEM_PROMPT),
-        HumanMessage(content=WEB_GRADER_HUMAN_TEMPLATE.format(question=question, web_results=web_results)),
-    ]
-    grade = get_web_grader_llm().invoke(messages)
-    logger.info("[Web Grader] Evidence grade: %s", grade.grade)
-    return {"web_grade": grade.grade}
+    try:
+        question = get_latest_question(state)
+        messages = [
+            SystemMessage(content=WEB_GRADER_SYSTEM_PROMPT),
+            HumanMessage(content=WEB_GRADER_HUMAN_TEMPLATE.format(question=question, web_results=web_results)),
+        ]
+        grade = get_web_grader_llm().invoke(messages)
+        logger.info("[Web Grader] Evidence grade: %s", grade.grade)
+        return {"web_grade": grade.grade}
+    except Exception as e:
+        logger.warning("[Web Grader Error] Failed to grade web evidence. Falling back to 'weak': %s", e)
+        return {"web_grade": "weak"}
 
 
 def decide_after_web_grade(state: AgentState) -> Literal["generate_from_web", "rewrite_query", "answer_insufficient"]:
@@ -306,10 +330,14 @@ def rewrite_query(state: AgentState) -> dict[str, Any]:
     """Rewrites inquiry to optimize retrieval precision for subsequent searches."""
     question = get_latest_question(state)
     retry_count = state.get("retry_count", 0) + 1
-    prompt = REWRITE_QUERY_PROMPT_TEMPLATE.format(question=question)
-    rewritten = get_llm().invoke(prompt).content.strip()
-    logger.info("[Rewriter] Rewritten query: '%s' (retry: %d)", rewritten, retry_count)
-    return {"current_query": rewritten, "retry_count": retry_count}
+    try:
+        prompt = REWRITE_QUERY_PROMPT_TEMPLATE.format(question=question)
+        rewritten = get_llm().invoke(prompt).content.strip()
+        logger.info("[Rewriter] Rewritten query: '%s' (retry: %d)", rewritten, retry_count)
+        return {"current_query": rewritten, "retry_count": retry_count}
+    except Exception as e:
+        logger.warning("[Rewriter Error] Failed to rewrite query. Keeping original query: %s", e)
+        return {"current_query": question, "retry_count": retry_count}
 
 
 def generate_from_kb(state: AgentState) -> dict[str, Any]:

@@ -1,4 +1,5 @@
 import logging
+import time
 from functools import lru_cache
 from typing import Literal
 
@@ -21,6 +22,9 @@ class Settings(BaseSettings):
     embedding_model: str = Field(default="sentence-transformers/all-MiniLM-L6-v2", validation_alias="EMBEDDING_MODEL")
     groq_model: str = Field(default="openai/gpt-oss-20b", validation_alias="GROQ_MODEL")
     max_retries: int = Field(default=1, validation_alias="MAX_RETRIES")
+    llm_timeout: float = Field(default=30.0, validation_alias="LLM_TIMEOUT")
+    llm_max_retries: int = Field(default=2, validation_alias="LLM_MAX_RETRIES")
+    tavily_timeout: float = Field(default=15.0, validation_alias="TAVILY_TIMEOUT")
 
     # Security & Policy Settings
     allowed_origins: list[str] = [
@@ -33,7 +37,6 @@ class Settings(BaseSettings):
     rate_limit: str = "20/minute"
     max_message_length: int = 1500
     max_thread_history: int = 10
-    cache_ttl_seconds: int = 60
 
     @field_validator("allowed_origins", mode="before")
     @classmethod
@@ -130,7 +133,9 @@ def get_llm():
         _llm_client = ChatGroq(
             model=settings.groq_model,
             temperature=0,
-            api_key=settings.groq_api_key or None
+            api_key=settings.groq_api_key or None,
+            request_timeout=settings.llm_timeout,
+            max_retries=settings.llm_max_retries,
         )
     return _llm_client
 
@@ -171,30 +176,40 @@ def get_embeddings():
     return _embeddings_client
 
 
-def get_retriever():
-    global _retriever_client
-    if _retriever_client is None:
-        settings = get_settings()
-        if not settings.pinecone_api_key:
-            logger.warning("PINECONE_API_KEY is not set. Pinecone retriever is disabled.")
-            return None
-        try:
-            from langchain_pinecone import PineconeVectorStore
-            from pinecone import Pinecone
+_last_retriever_failure_time: float = 0.0
+RETRIEVER_BACKOFF_SECONDS: float = 30.0
 
-            pc = Pinecone(api_key=settings.pinecone_api_key)
-            index = pc.Index(settings.index_name)
-            vectorstore = PineconeVectorStore(
-                index=index,
-                embedding=get_embeddings(),
-                namespace=settings.namespace
-            )
-            _retriever_client = vectorstore.as_retriever(
-                search_kwargs={"k": 4, "namespace": settings.namespace}
-            )
-        except Exception as e:
-            logger.warning("Pinecone index connection not ready or accessible: %s", e)
-            _retriever_client = None
+
+def get_retriever():
+    global _retriever_client, _last_retriever_failure_time
+    if _retriever_client is not None:
+        return _retriever_client
+    settings = get_settings()
+    if not settings.pinecone_api_key:
+        logger.warning("PINECONE_API_KEY is not set. Pinecone retriever is disabled.")
+        return None
+    # Short backoff so Pinecone outage doesn't trigger reconnect on every request
+    if time.time() - _last_retriever_failure_time < RETRIEVER_BACKOFF_SECONDS:
+        return None
+    try:
+        from langchain_pinecone import PineconeVectorStore
+        from pinecone import Pinecone
+
+        pc = Pinecone(api_key=settings.pinecone_api_key)
+        index = pc.Index(settings.index_name)
+        vectorstore = PineconeVectorStore(
+            index=index,
+            embedding=get_embeddings(),
+            namespace=settings.namespace
+        )
+        _retriever_client = vectorstore.as_retriever(
+            search_kwargs={"k": 4, "namespace": settings.namespace}
+        )
+        _last_retriever_failure_time = 0.0
+    except Exception as e:
+        logger.warning("Pinecone index connection not ready or accessible: %s", e)
+        _last_retriever_failure_time = time.time()
+        _retriever_client = None
     return _retriever_client
 
 

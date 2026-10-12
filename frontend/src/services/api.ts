@@ -112,8 +112,8 @@ export async function streamMessage(req: ChatRequest, callbacks: StreamCallbacks
             } else if (event.type === "error" && callbacks.onError) {
               callbacks.onError(event.error || "Unknown error during streaming")
             }
-          } catch {
-            // Incomplete or non-JSON chunk
+          } catch (e) {
+            console.warn("Failed to parse SSE chunk:", trimmed, e)
           }
         }
       }

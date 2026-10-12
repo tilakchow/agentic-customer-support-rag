@@ -2,7 +2,6 @@ import hmac
 import json
 import logging
 import re
-import time
 import uuid
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
@@ -43,30 +42,6 @@ async def verify_api_key(api_key: str | None = Security(api_key_header)) -> str 
     return api_key
 
 
-# --- In-Memory Short-TTL Answer Cache for Repeats ---
-# Cache key: (clean_question, thread_id) -> (answer, source_used, expiry_timestamp)
-_RESPONSE_CACHE: dict[tuple[str, str], tuple[str, str, float]] = {}
-
-
-def get_cached_response(query: str, thread_id: str) -> tuple[str, str] | None:
-    key = (query.strip().lower(), thread_id)
-    if key in _RESPONSE_CACHE:
-        answer, source, expiry = _RESPONSE_CACHE[key]
-        if time.time() < expiry:
-            logger.info("[Cache Hit] Returning cached answer for query: '%s'", query[:40])
-            return answer, source
-        else:
-            del _RESPONSE_CACHE[key]
-    return None
-
-
-def set_cached_response(query: str, thread_id: str, answer: str, source: str) -> None:
-    ttl = get_settings().cache_ttl_seconds
-    if ttl > 0:
-        key = (query.strip().lower(), thread_id)
-        _RESPONSE_CACHE[key] = (answer, source, time.time() + ttl)
-
-
 # --- Application Lifespan Handler ---
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -81,7 +56,6 @@ async def lifespan(app: FastAPI):
     app.state.agent_app = get_agent_app()
     logger.info("Agentic-RAG backend startup complete.")
     yield
-    _RESPONSE_CACHE.clear()
     logger.info("Agentic-RAG backend shutdown complete.")
 
 
@@ -227,15 +201,6 @@ def kb_search_endpoint(
 
 async def stream_agent_generator(message: str, thread_id: str) -> AsyncGenerator[str]:
     """Generates Server-Sent Events asynchronously without blocking the Uvicorn event loop."""
-    # Check short-TTL cache for duplicate query
-    cached = get_cached_response(message, thread_id)
-    if cached:
-        cached_answer, cached_source = cached
-        yield f"data: {json.dumps({'type': 'status', 'node': 'cache', 'message': 'Retrieved cached response...'})}\n\n"
-        yield f"data: {json.dumps({'type': 'token', 'token': cached_answer})}\n\n"
-        yield f"data: {json.dumps({'type': 'done', 'thread_id': thread_id, 'source_used': cached_source, 'full_content': cached_answer})}\n\n"
-        return
-
     agent_app = get_current_agent()
     config = {"configurable": {"thread_id": thread_id}}
     input_data = {"messages": [HumanMessage(content=message)]}
@@ -254,6 +219,19 @@ async def stream_agent_generator(message: str, thread_id: str) -> AsyncGenerator
                     payload = json.dumps({"type": "status", "node": node_name, "message": status_text})
                     yield f"data: {payload}\n\n"
 
+            # Check for node completion updates (e.g. retrieval failure notice)
+            elif event_type == "on_chain_end":
+                node_name = event.get("metadata", {}).get("langgraph_node")
+                if node_name == "retrieve_kb":
+                    output = event.get("data", {}).get("output", {})
+                    if isinstance(output, dict) and output.get("kb_retrieval_failed"):
+                        payload = json.dumps({
+                            "type": "status",
+                            "node": "retrieve_kb",
+                            "message": "Knowledge base retrieval unavailable or failed..."
+                        })
+                        yield f"data: {payload}\n\n"
+
             # Stream LLM tokens when generating final answer
             elif event_type == "on_chat_model_stream":
                 node_name = event.get("metadata", {}).get("langgraph_node")
@@ -270,10 +248,6 @@ async def stream_agent_generator(message: str, thread_id: str) -> AsyncGenerator
 
         messages = final_state.get("messages", [])
         last_content = messages[-1].content if messages else ""
-
-        # Cache valid response
-        if last_content:
-            set_cached_response(message, thread_id, str(last_content), source)
 
         payload = json.dumps({
             "type": "done",
@@ -310,16 +284,6 @@ async def chat_endpoint(
             media_type="text/event-stream"
         )
 
-    # Check cache for repeats
-    cached = get_cached_response(body.message, thread_id)
-    if cached:
-        cached_answer, cached_source = cached
-        return ChatResponse(
-            response=cached_answer,
-            thread_id=thread_id,
-            source_used=cached_source
-        )
-
     # Non-blocking async invocation (ainvoke)
     agent_app = get_current_agent()
     config = {"configurable": {"thread_id": thread_id}}
@@ -336,9 +300,6 @@ async def chat_endpoint(
         last_message = messages[-1]
         answer_content = last_message.content if hasattr(last_message, "content") else str(last_message)
         source = result.get("source_used", "unknown")
-
-        # Cache response
-        set_cached_response(body.message, thread_id, str(answer_content), source)
 
         return ChatResponse(
             response=str(answer_content),
