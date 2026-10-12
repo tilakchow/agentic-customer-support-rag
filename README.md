@@ -317,5 +317,5 @@ docker run -p 7860:7860 \
 ## 👨‍💻 Author
 
 **Tilak chowdary**  
-- **Email**: [tilakchowdary5@gmail.com](mailto:tilakchowdary5@gmail.com)  
+- **Email**: [tilakchowdary18@gmail.com](mailto:tilakchowdary18@gmail.com)  
 - **Repository**: [tilakchow/Agentic-RAG](https://github.com/tilakchow/agentic-customer-support-rag)
