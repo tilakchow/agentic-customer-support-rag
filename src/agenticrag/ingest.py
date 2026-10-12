@@ -42,7 +42,7 @@ def run_ingestion() -> None:
         meta = {
             "source": "bitext_customer_support",
             "category": row.get("category", "support"),
-            "intent": row.get("intent", "general")
+            "intent": row.get("intent", "general"),
         }
         doc = Document(page_content=content, metadata=meta)
         raw_docs.append(doc)
@@ -80,13 +80,15 @@ def run_ingestion() -> None:
     # Share the exact same embedding model configuration used at runtime
     embeddings = get_embeddings()
 
-    logger.info("Upserting %d chunks with deterministic IDs to namespace '%s'...", len(chunks), namespace)
+    logger.info(
+        "Upserting %d chunks with deterministic IDs to namespace '%s'...", len(chunks), namespace
+    )
     PineconeVectorStore.from_documents(
         documents=chunks,
         embedding=embeddings,
         index_name=index_name,
         namespace=namespace,
-        ids=chunk_ids
+        ids=chunk_ids,
     )
 
     logger.info("Ingestion complete! Knowledge base is idempotent and ready.")

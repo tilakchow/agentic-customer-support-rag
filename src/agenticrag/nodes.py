@@ -71,8 +71,10 @@ __all__ = [
 
 # --- State Definition ---
 
+
 class AgentState(TypedDict):
     """Execution state schema passed across all LangGraph nodes."""
+
     messages: Annotated[list[AnyMessage], add_messages]
     current_query: str
     kb_docs: list[Document]
@@ -82,12 +84,15 @@ class AgentState(TypedDict):
     web_search_failed: bool
     kb_grade: str
     web_grade: str
-    route: str           # Router intent: 'kb' or 'direct'
-    source_used: str     # Origin of answer: 'private_kb', 'web_search', 'direct', 'insufficient_evidence'
+    route: str  # Router intent: 'kb' or 'direct'
+    source_used: (
+        str  # Origin of answer: 'private_kb', 'web_search', 'direct', 'insufficient_evidence'
+    )
     retry_count: int
 
 
 # --- Helper Functions (Pure & Sync) ---
+
 
 def get_latest_question(state: AgentState) -> str:
     """Extracts the most recent user inquiry from the state messages."""
@@ -127,10 +132,21 @@ def is_internal_contact_query(query: str) -> bool:
     """Detects if query asks for internal company contact channels (phone, hotline, email)."""
     q = query.lower()
     contact_keywords = [
-        "phone number", "customer service number", "customer support number",
-        "toll free", "hotline", "telephone", "call you", "call support",
-        "support phone", "helpdesk number", "contact number", "call center",
-        "direct number", "helpline", "support number"
+        "phone number",
+        "customer service number",
+        "customer support number",
+        "toll free",
+        "hotline",
+        "telephone",
+        "call you",
+        "call support",
+        "support phone",
+        "helpdesk number",
+        "contact number",
+        "call center",
+        "direct number",
+        "helpline",
+        "support number",
     ]
     return any(kw in q for kw in contact_keywords)
 
@@ -139,8 +155,14 @@ def is_proprietary_policy_query(query: str) -> bool:
     """Detects inquiries regarding proprietary company policies to prevent external web hallucination."""
     q = query.lower()
     policy_keywords = [
-        "policy", "return policy", "refund policy", "cancellation policy",
-        "warranty policy", "exchange policy", "guarantee policy", "terms of service"
+        "policy",
+        "return policy",
+        "refund policy",
+        "cancellation policy",
+        "warranty policy",
+        "exchange policy",
+        "guarantee policy",
+        "terms of service",
     ]
     return any(kw in q for kw in policy_keywords)
 
@@ -152,31 +174,41 @@ def route_after_router(state: AgentState) -> Literal["retrieve_kb", "direct_answ
     return NodeName.DIRECT_ANSWER.value
 
 
-def decide_after_kb_grade(state: AgentState) -> Literal["generate_from_kb", "search_web", "answer_insufficient"]:
+def decide_after_kb_grade(
+    state: AgentState,
+) -> Literal["generate_from_kb", "search_web", "answer_insufficient"]:
     """Conditional edge decision: proceeds to KB synthesis if grade is good, else falls back to web search or insufficient notice."""
     if state.get("kb_grade") == "good":
         return NodeName.GENERATE_FROM_KB.value
 
     settings = get_settings()
     if not settings.web_fallback_enabled:
-        logger.info("[Routing] Web fallback disabled by configuration. Routing to answer_insufficient.")
+        logger.info(
+            "[Routing] Web fallback disabled by configuration. Routing to answer_insufficient."
+        )
         return NodeName.ANSWER_INSUFFICIENT.value
 
     # Prevent searching the open web for proprietary contact numbers/channels
     question = get_latest_question(state)
     if is_internal_contact_query(question):
-        logger.info("[Routing] Contact inquiry without KB evidence. Skipping web search to prevent external contact hallucination.")
+        logger.info(
+            "[Routing] Contact inquiry without KB evidence. Skipping web search to prevent external contact hallucination."
+        )
         return NodeName.ANSWER_INSUFFICIENT.value
 
     # Prevent searching the open web for proprietary company policies
     if is_proprietary_policy_query(question):
-        logger.info("[Routing] Proprietary policy inquiry without KB evidence. Skipping web search.")
+        logger.info(
+            "[Routing] Proprietary policy inquiry without KB evidence. Skipping web search."
+        )
         return NodeName.ANSWER_INSUFFICIENT.value
 
     return NodeName.SEARCH_WEB.value
 
 
-def decide_after_web_grade(state: AgentState) -> Literal["generate_from_web", "rewrite_query", "answer_insufficient"]:
+def decide_after_web_grade(
+    state: AgentState,
+) -> Literal["generate_from_web", "rewrite_query", "answer_insufficient"]:
     """Conditional edge decision: routes to web synthesis, query rewrite retry, or insufficient notice."""
     # If search failed due to API/network exception, route immediately to answer_insufficient
     if state.get("web_search_failed", False):
@@ -192,6 +224,7 @@ def decide_after_web_grade(state: AgentState) -> Literal["generate_from_web", "r
 
 # --- Async Graph Nodes ---
 
+
 async def route_question(state: AgentState) -> dict[str, Any]:
     """Analyzes user inquiry and classifies route to private knowledge base or direct conversation."""
     question = get_latest_question(state)
@@ -203,7 +236,9 @@ async def route_question(state: AgentState) -> dict[str, Any]:
         route = decision.route
         logger.info("[Router] Decision: %s for query: %s", route, question[:50])
     except Exception as e:
-        logger.warning("[Router Error] Failed to route query (%s). Falling back to 'kb': %s", question[:50], e)
+        logger.warning(
+            "[Router Error] Failed to route query (%s). Falling back to 'kb': %s", question[:50], e
+        )
         route = "kb"
 
     return {
@@ -258,7 +293,10 @@ async def retrieve_kb(state: AgentState) -> dict[str, Any]:
 
     logger.info(
         "[KB Retriever] Retrieved: %d chunks for query: '%s' (top_score=%.4f, failed=%s)",
-        len(docs), query[:50], top_score, kb_retrieval_failed
+        len(docs),
+        query[:50],
+        top_score,
+        kb_retrieval_failed,
     )
     return {
         "kb_docs": docs,
@@ -284,25 +322,29 @@ async def grade_kb_evidence(state: AgentState) -> dict[str, Any]:
         if top_score >= settings.skip_grader_score:
             logger.info(
                 "[KB Grader] Top similarity score %.4f >= threshold %.4f. Skipping LLM call and marking good.",
-                top_score, settings.skip_grader_score
+                top_score,
+                settings.skip_grader_score,
             )
             return {"kb_grade": "good"}
 
     try:
         context = "\n\n".join(
-            f"Source: {doc.metadata.get('source', 'unknown')}\n{doc.page_content}"
-            for doc in docs
+            f"Source: {doc.metadata.get('source', 'unknown')}\n{doc.page_content}" for doc in docs
         )
 
         messages = [
             SystemMessage(content=KB_GRADER_SYSTEM_PROMPT),
-            HumanMessage(content=KB_GRADER_HUMAN_TEMPLATE.format(question=question, context=context)),
+            HumanMessage(
+                content=KB_GRADER_HUMAN_TEMPLATE.format(question=question, context=context)
+            ),
         ]
         grade = await get_grader_llm().ainvoke(messages)
         logger.info("[KB Grader] Evidence grade: %s", grade.grade)
         return {"kb_grade": grade.grade}
     except Exception as e:
-        logger.warning("[KB Grader Error] Failed to grade KB evidence. Falling back to 'weak': %s", e)
+        logger.warning(
+            "[KB Grader Error] Failed to grade KB evidence. Falling back to 'weak': %s", e
+        )
         return {"kb_grade": "weak"}
 
 
@@ -336,7 +378,9 @@ async def search_web(state: AgentState) -> dict[str, Any]:
 async def grade_web_evidence(state: AgentState) -> dict[str, Any]:
     """Evaluates whether web search results are relevant and sufficient to answer the question."""
     if state.get("web_search_failed", False):
-        logger.warning("[Web Grader] Web search failed earlier. Bypassing LLM grading and setting weak grade.")
+        logger.warning(
+            "[Web Grader] Web search failed earlier. Bypassing LLM grading and setting weak grade."
+        )
         return {"web_grade": "weak"}
 
     web_results = state.get("web_results", "").strip()
@@ -347,13 +391,17 @@ async def grade_web_evidence(state: AgentState) -> dict[str, Any]:
         question = get_latest_question(state)
         messages = [
             SystemMessage(content=WEB_GRADER_SYSTEM_PROMPT),
-            HumanMessage(content=WEB_GRADER_HUMAN_TEMPLATE.format(question=question, web_results=web_results)),
+            HumanMessage(
+                content=WEB_GRADER_HUMAN_TEMPLATE.format(question=question, web_results=web_results)
+            ),
         ]
         grade = await get_grader_llm().ainvoke(messages)
         logger.info("[Web Grader] Evidence grade: %s", grade.grade)
         return {"web_grade": grade.grade}
     except Exception as e:
-        logger.warning("[Web Grader Error] Failed to grade web evidence. Falling back to 'weak': %s", e)
+        logger.warning(
+            "[Web Grader Error] Failed to grade web evidence. Falling back to 'weak': %s", e
+        )
         return {"web_grade": "weak"}
 
 
@@ -364,7 +412,9 @@ async def rewrite_query(state: AgentState) -> dict[str, Any]:
     try:
         prompt = REWRITE_QUERY_PROMPT_TEMPLATE.format(question=question)
         response = await get_llm().ainvoke(prompt)
-        rewritten = response.content.strip() if hasattr(response, "content") else str(response).strip()
+        rewritten = (
+            response.content.strip() if hasattr(response, "content") else str(response).strip()
+        )
         logger.info("[Rewriter] Rewritten query: '%s' (retry: %d)", rewritten, retry_count)
         return {"current_query": rewritten, "retry_count": retry_count}
     except Exception as e:
@@ -414,9 +464,7 @@ async def direct_answer(state: AgentState) -> dict[str, Any]:
     question = get_latest_question(state)
     history = get_conversation_history(state)
     prompt = DIRECT_ANSWER_PROMPT_TEMPLATE.format(
-        system_prompt=CUSTOMER_SUPPORT_SYSTEM_PROMPT,
-        history=history,
-        question=question
+        system_prompt=CUSTOMER_SUPPORT_SYSTEM_PROMPT, history=history, question=question
     )
     response = await get_llm().ainvoke(prompt)
     answer = response.content if hasattr(response, "content") else str(response)
@@ -428,9 +476,7 @@ async def answer_insufficient(state: AgentState) -> dict[str, Any]:
     question = get_latest_question(state)
     history = get_conversation_history(state)
     prompt = INSUFFICIENT_EVIDENCE_PROMPT_TEMPLATE.format(
-        system_prompt=CUSTOMER_SUPPORT_SYSTEM_PROMPT,
-        history=history,
-        question=question
+        system_prompt=CUSTOMER_SUPPORT_SYSTEM_PROMPT, history=history, question=question
     )
     response = await get_llm().ainvoke(prompt)
     answer = response.content if hasattr(response, "content") else str(response)

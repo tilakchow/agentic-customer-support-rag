@@ -23,6 +23,7 @@ def get_llm():
     global _llm_client
     if _llm_client is None:
         from langchain_groq import ChatGroq
+
         settings = get_settings()
         _llm_client = ChatGroq(
             model=settings.groq_model,
@@ -54,13 +55,14 @@ def get_web_search():
     global _web_search_client
     if _web_search_client is None:
         from langchain_tavily import TavilySearch
+
         settings = get_settings()
         _web_search_client = TavilySearch(
             max_results=5,
             topic="general",
             include_answer=True,
             include_raw_content=False,
-            tavily_api_key=settings.tavily_api_key or None
+            tavily_api_key=settings.tavily_api_key or None,
         )
     return _web_search_client
 
@@ -70,6 +72,7 @@ def get_embeddings():
     global _embeddings_client
     if _embeddings_client is None:
         from langchain_community.embeddings.fastembed import FastEmbedEmbeddings
+
         settings = get_settings()
         kwargs = {"model_name": settings.embedding_model}
         if settings.fastembed_cache_dir:
@@ -96,9 +99,7 @@ def get_vectorstore():
         pc = Pinecone(api_key=settings.pinecone_api_key)
         index = pc.Index(settings.index_name)
         _vectorstore_client = PineconeVectorStore(
-            index=index,
-            embedding=get_embeddings(),
-            namespace=settings.namespace
+            index=index, embedding=get_embeddings(), namespace=settings.namespace
         )
         _last_retriever_failure_time = 0.0
     except Exception as e:

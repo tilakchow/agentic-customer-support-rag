@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field, model_validator
 class RouteDecision(BaseModel):
     route: Literal["kb", "direct"] = Field(
         default="kb",
-        description="Use kb for questions needing Agentic RAG docs; direct for greetings/simple chat."
+        description="Use kb for questions needing Agentic RAG docs; direct for greetings/simple chat.",
     )
 
     @model_validator(mode="before")
@@ -25,7 +25,7 @@ class RouteDecision(BaseModel):
 class EvidenceGrade(BaseModel):
     grade: Literal["good", "weak"] = Field(
         default="weak",
-        description="good means evidence can answer the question; weak means not enough evidence."
+        description="good means evidence can answer the question; weak means not enough evidence.",
     )
 
     @model_validator(mode="before")

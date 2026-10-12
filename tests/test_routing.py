@@ -41,7 +41,7 @@ def test_decide_after_kb_grade_weak_contact_number():
     # When user asks for a phone number and KB doesn't have it, do NOT search the open web!
     state = {
         "kb_grade": "weak",
-        "messages": [HumanMessage(content="can i know the customer service number !")]
+        "messages": [HumanMessage(content="can i know the customer service number !")],
     }
     assert decide_after_kb_grade(state) == NodeName.ANSWER_INSUFFICIENT.value
 
@@ -91,3 +91,18 @@ def test_get_conversation_history_deduplication():
     assert "Where is my order?" not in history
     assert "Hello" in history
     assert "Hi there! How can I help?" in history
+
+
+def test_validate_runtime_keys_smoke():
+    from agenticrag.config import get_settings
+
+    settings = get_settings()
+    # Non-strict validation logs warnings rather than raising
+    settings.validate_runtime_keys(strict=False)
+
+
+def test_compiled_agent_smoke():
+    from agenticrag.graph import get_agent_app
+
+    app = get_agent_app()
+    assert app is not None

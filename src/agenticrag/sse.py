@@ -17,7 +17,9 @@ def sse(event: dict) -> str:
     return f"data: {json.dumps(event)}\n\n"
 
 
-async def stream_agent_generator(message: str, thread_id: str, agent_app=None) -> AsyncGenerator[str]:
+async def stream_agent_generator(
+    message: str, thread_id: str, agent_app=None
+) -> AsyncGenerator[str]:
     """Generates Server-Sent Events asynchronously without blocking the Uvicorn event loop."""
     if agent_app is None:
         agent_app = get_agent_app()
@@ -44,11 +46,13 @@ async def stream_agent_generator(message: str, thread_id: str, agent_app=None) -
                 if node_name == "retrieve_kb":
                     output = event.get("data", {}).get("output", {})
                     if isinstance(output, dict) and output.get("kb_retrieval_failed"):
-                        yield sse({
-                            "type": "status",
-                            "node": "retrieve_kb",
-                            "message": "Knowledge base retrieval unavailable or failed..."
-                        })
+                        yield sse(
+                            {
+                                "type": "status",
+                                "node": "retrieve_kb",
+                                "message": "Knowledge base retrieval unavailable or failed...",
+                            }
+                        )
 
             # Stream LLM tokens when generating final answer
             elif event_type == "on_chat_model_stream":
@@ -66,17 +70,21 @@ async def stream_agent_generator(message: str, thread_id: str, agent_app=None) -
         messages = final_state.get("messages", [])
         last_content = messages[-1].content if messages else ""
 
-        yield sse({
-            "type": "done",
-            "thread_id": thread_id,
-            "source_used": source,
-            "full_content": str(last_content)
-        })
+        yield sse(
+            {
+                "type": "done",
+                "thread_id": thread_id,
+                "source_used": source,
+                "full_content": str(last_content),
+            }
+        )
 
     except Exception as e:
         logger.error("[Streaming Error]: %s", e, exc_info=True)
         # Never leak raw internal stack traces/provider errors to SSE clients
-        yield sse({
-            "type": "error",
-            "error": "An unexpected error occurred while generating your response. Please try again."
-        })
+        yield sse(
+            {
+                "type": "error",
+                "error": "An unexpected error occurred while generating your response. Please try again.",
+            }
+        )

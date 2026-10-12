@@ -7,14 +7,10 @@ from agenticrag.config import get_settings
 
 class ChatRequest(BaseModel):
     """Payload for conversational queries."""
-    message: str = Field(
-        ...,
-        min_length=1,
-        description="User question or statement"
-    )
+
+    message: str = Field(..., min_length=1, description="User question or statement")
     thread_id: str | None = Field(
-        None,
-        description="Session/Thread identifier for conversation memory"
+        None, description="Session/Thread identifier for conversation memory"
     )
 
     @field_validator("message")
@@ -31,11 +27,15 @@ class ChatRequest(BaseModel):
 
 class ChatResponse(BaseModel):
     """Synchronous JSON response for /chat endpoint."""
+
     response: str = Field(..., description="Assistant's response text")
     thread_id: str = Field(..., description="Active thread ID for conversational continuity")
-    source_used: str | None = Field(None, description="Data source used (private_kb, web_search, direct, etc.)")
+    source_used: str | None = Field(
+        None, description="Data source used (private_kb, web_search, direct, etc.)"
+    )
 
 
 class KBSearchRequest(BaseModel):
     """Payload for direct knowledge base search queries."""
+
     query: str = Field(..., min_length=1, max_length=500)

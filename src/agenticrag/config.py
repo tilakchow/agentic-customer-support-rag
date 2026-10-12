@@ -13,15 +13,20 @@ logger = logging.getLogger(__name__)
 
 class Settings(BaseSettings):
     """Application settings loaded from environment or .env file."""
+
     groq_api_key: str = Field(default="", validation_alias="GROQ_API_KEY")
     pinecone_api_key: str = Field(default="", validation_alias="PINECONE_API_KEY")
     tavily_api_key: str = Field(default="", validation_alias="TAVILY_API_KEY")
-    api_key: str = Field(default="", validation_alias="API_KEY")  # Optional secret for client auth; unset means public
+    api_key: str = Field(
+        default="", validation_alias="API_KEY"
+    )  # Optional secret for client auth; unset means public
     require_api_key: bool = Field(default=False, validation_alias="REQUIRE_API_KEY")
 
     index_name: str = Field(default="industry-agentic-rag-kb", validation_alias="INDEX_NAME")
     namespace: str = Field(default="bitext-support", validation_alias="NAMESPACE")
-    embedding_model: str = Field(default="sentence-transformers/all-MiniLM-L6-v2", validation_alias="EMBEDDING_MODEL")
+    embedding_model: str = Field(
+        default="sentence-transformers/all-MiniLM-L6-v2", validation_alias="EMBEDDING_MODEL"
+    )
     groq_model: str = Field(default="openai/gpt-oss-20b", validation_alias="GROQ_MODEL")
     max_retries: int = Field(default=1, validation_alias="MAX_RETRIES")
     llm_timeout: float = Field(default=30.0, validation_alias="LLM_TIMEOUT")
@@ -53,11 +58,7 @@ class Settings(BaseSettings):
             return [origin.strip() for origin in v.split(",") if origin.strip()]
         return v
 
-    model_config = SettingsConfigDict(
-        env_file=".env",
-        env_file_encoding="utf-8",
-        extra="ignore"
-    )
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
     def validate_runtime_keys(self, strict: bool = False) -> None:
         """Validates that necessary API keys are present for execution."""
@@ -73,10 +74,7 @@ class Settings(BaseSettings):
             msg = f"Missing required environment variables: {', '.join(missing)}."
             if strict:
                 raise RuntimeError(msg)
-            logger.warning(
-                "%s Some agent capabilities will be limited or require mocking.",
-                msg
-            )
+            logger.warning("%s Some agent capabilities will be limited or require mocking.", msg)
 
 
 @lru_cache(maxsize=1)

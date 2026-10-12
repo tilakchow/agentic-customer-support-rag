@@ -48,17 +48,18 @@ app = FastAPI(
     title="Agentic-RAG API",
     description="Hardened, production-ready FastAPI backend with rate limiting, async concurrency, and streaming",
     version="1.0.0",
-    lifespan=lifespan
+    lifespan=lifespan,
 )
 
 # Attach rate limiter to application state and exception handler
 app.state.limiter = limiter
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)  # type: ignore[arg-type]
 
 
 # Lazy CORS Middleware to avoid importing/reading settings on module load
 class LazyCORSMiddleware(CORSMiddleware):
     """CORS middleware that dynamically resolves allowed origins from settings per request."""
+
     def __init__(self, inner_app, **kwargs):
         super().__init__(
             inner_app,
@@ -74,7 +75,7 @@ class LazyCORSMiddleware(CORSMiddleware):
         return origin in get_settings().allowed_origins
 
 
-app.add_middleware(LazyCORSMiddleware)
+app.add_middleware(LazyCORSMiddleware)  # type: ignore[arg-type]
 
 
 def get_current_agent():
@@ -100,7 +101,7 @@ def root():
         "service": "Agentic-RAG Customer Support Backend",
         "docs": "/docs",
         "health": "/health",
-        "kb_info": "/kb/info"
+        "kb_info": "/kb/info",
     }
 
 
@@ -112,10 +113,7 @@ def health_check():
 
 @app.get("/kb/info")
 @limiter.limit("30/minute")
-def kb_info_endpoint(
-    request: Request,
-    _auth: str | None = Depends(verify_api_key)
-):
+def kb_info_endpoint(request: Request, _auth: str | None = Depends(verify_api_key)):
     """Returns knowledge base vector store metadata and index status."""
     settings = get_settings()
     retriever_instance = get_retriever()
@@ -127,44 +125,38 @@ def kb_info_endpoint(
         "sample_size": KB_SAMPLE_SIZE,
         "retriever_k": RETRIEVER_K,
         "dataset": DATASET_NAME,
-        "retriever_connected": retriever_instance is not None
+        "retriever_connected": retriever_instance is not None,
     }
 
 
 @app.post("/kb/search")
 @limiter.limit("30/minute")
 def kb_search_endpoint(
-    request: Request,
-    body: KBSearchRequest,
-    _auth: str | None = Depends(verify_api_key)
+    request: Request, body: KBSearchRequest, _auth: str | None = Depends(verify_api_key)
 ):
     """Direct vector search endpoint with rate limiting and authentication."""
     retriever_instance = get_retriever()
     if not retriever_instance:
-        raise HTTPException(status_code=503, detail="Knowledge base retriever is temporarily unavailable.")
+        raise HTTPException(
+            status_code=503, detail="Knowledge base retriever is temporarily unavailable."
+        )
     try:
         docs = retriever_instance.invoke(body.query)
         return {
             "query": body.query,
-            "results": [
-                {
-                    "content": doc.page_content,
-                    "metadata": doc.metadata
-                }
-                for doc in docs
-            ]
+            "results": [{"content": doc.page_content, "metadata": doc.metadata} for doc in docs],
         }
     except Exception as e:
         logger.error("[KBSearch Error]: %s", e, exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to execute search in knowledge base.") from e
+        raise HTTPException(
+            status_code=500, detail="Failed to execute search in knowledge base."
+        ) from e
 
 
 @app.post("/chat", response_model=ChatResponse)
 @limiter.limit(lambda: get_settings().rate_limit)
 async def chat_endpoint(
-    request: Request,
-    body: ChatRequest,
-    _auth: str | None = Depends(verify_api_key)
+    request: Request, body: ChatRequest, _auth: str | None = Depends(verify_api_key)
 ):
     """Chat endpoint returning direct JSON response."""
     thread_id = clean_thread_id(body.thread_id)
@@ -173,8 +165,7 @@ async def chat_endpoint(
     config = {"configurable": {"thread_id": thread_id}}
     try:
         result = await agent_app.ainvoke(
-            {"messages": [HumanMessage(content=body.message)]},
-            config=config
+            {"messages": [HumanMessage(content=body.message)]}, config=config
         )
 
         messages = result.get("messages", [])
@@ -182,34 +173,30 @@ async def chat_endpoint(
             raise HTTPException(status_code=500, detail="No response could be generated.")
 
         last_message = messages[-1]
-        answer_content = last_message.content if hasattr(last_message, "content") else str(last_message)
+        answer_content = (
+            last_message.content if hasattr(last_message, "content") else str(last_message)
+        )
         source = result.get("source_used", "unknown")
 
-        return ChatResponse(
-            response=str(answer_content),
-            thread_id=thread_id,
-            source_used=source
-        )
+        return ChatResponse(response=str(answer_content), thread_id=thread_id, source_used=source)
     except HTTPException:
         raise
     except Exception as e:
         logger.error("[API Error] /chat failed: %s", e, exc_info=True)
         raise HTTPException(
             status_code=500,
-            detail="An error occurred while processing your request. Please try again later."
+            detail="An error occurred while processing your request. Please try again later.",
         ) from e
 
 
 @app.post("/chat/stream")
 @limiter.limit(lambda: get_settings().rate_limit)
 async def chat_stream_endpoint(
-    request: Request,
-    body: ChatRequest,
-    _auth: str | None = Depends(verify_api_key)
+    request: Request, body: ChatRequest, _auth: str | None = Depends(verify_api_key)
 ):
     """Direct Server-Sent Events streaming endpoint with rate limits."""
     thread_id = clean_thread_id(body.thread_id)
     return StreamingResponse(
         stream_agent_generator(body.message, thread_id, agent_app=get_current_agent()),
-        media_type="text/event-stream"
+        media_type="text/event-stream",
     )

@@ -6,6 +6,7 @@ from typing import Any
 
 class NodeName(StrEnum):
     """Enumeration of all node identifiers across the agent state graph."""
+
     ROUTE_QUESTION = "route_question"
     RETRIEVE_KB = "retrieve_kb"
     GRADE_KB_EVIDENCE = "grade_kb_evidence"

@@ -21,7 +21,9 @@ from agenticrag.nodes import (
 async def test_route_question_fallback_on_exception():
     state = {"messages": [HumanMessage(content="Hello!")]}
     with patch("agenticrag.nodes.get_router_llm") as mock_llm:
-        mock_llm.return_value.ainvoke = AsyncMock(side_effect=RuntimeError("Groq rate limit or timeout"))
+        mock_llm.return_value.ainvoke = AsyncMock(
+            side_effect=RuntimeError("Groq rate limit or timeout")
+        )
         result = await route_question(state)
         assert result["route"] == "kb"
         assert result["current_query"] == "Hello!"
@@ -31,8 +33,10 @@ async def test_route_question_fallback_on_exception():
 @pytest.mark.asyncio
 async def test_retrieve_kb_failure_sets_flag():
     state = {"current_query": "return policy"}
-    with patch("agenticrag.nodes.get_vectorstore", return_value=None), \
-         patch("agenticrag.nodes.get_retriever") as mock_retriever:
+    with (
+        patch("agenticrag.nodes.get_vectorstore", return_value=None),
+        patch("agenticrag.nodes.get_retriever") as mock_retriever,
+    ):
         mock_client = MagicMock()
         mock_client.invoke.side_effect = ConnectionError("Pinecone unreachable")
         mock_retriever.return_value = mock_client
@@ -44,8 +48,10 @@ async def test_retrieve_kb_failure_sets_flag():
 @pytest.mark.asyncio
 async def test_retrieve_kb_none_retriever_sets_flag():
     state = {"current_query": "return policy"}
-    with patch("agenticrag.nodes.get_vectorstore", return_value=None), \
-         patch("agenticrag.nodes.get_retriever", return_value=None):
+    with (
+        patch("agenticrag.nodes.get_vectorstore", return_value=None),
+        patch("agenticrag.nodes.get_retriever", return_value=None),
+    ):
         result = await retrieve_kb(state)
         assert result["kb_retrieval_failed"] is True
         assert result["kb_docs"] == []
@@ -67,11 +73,17 @@ async def test_grade_kb_evidence_fallback_on_exception():
 async def test_grade_kb_evidence_skip_grader_score():
     state = {
         "messages": [HumanMessage(content="What is the shipping cost?")],
-        "kb_docs": [Document(page_content="Free shipping over $50", metadata={"source": "faq", "score": 0.92})],
+        "kb_docs": [
+            Document(
+                page_content="Free shipping over $50", metadata={"source": "faq", "score": 0.92}
+            )
+        ],
         "top_similarity_score": 0.92,
     }
-    with patch("agenticrag.nodes.get_settings") as mock_settings, \
-         patch("agenticrag.nodes.get_grader_llm") as mock_grader:
+    with (
+        patch("agenticrag.nodes.get_settings") as mock_settings,
+        patch("agenticrag.nodes.get_grader_llm") as mock_grader,
+    ):
         mock_settings.return_value.skip_grader_score = 0.85
         result = await grade_kb_evidence(state)
         assert result["kb_grade"] == "good"
@@ -111,7 +123,9 @@ async def test_rewrite_query_success():
         "retry_count": 0,
     }
     with patch("agenticrag.nodes.get_llm") as mock_llm:
-        mock_llm.return_value.ainvoke = AsyncMock(return_value=AIMessage(content="how to track shipment parcel"))
+        mock_llm.return_value.ainvoke = AsyncMock(
+            return_value=AIMessage(content="how to track shipment parcel")
+        )
         result = await rewrite_query(state)
         assert result["current_query"] == "how to track shipment parcel"
         assert result["retry_count"] == 1
@@ -128,20 +142,14 @@ async def test_search_web_failure_sets_flag():
 
 
 def test_decide_after_kb_grade_web_fallback_disabled():
-    state = {
-        "kb_grade": "weak",
-        "messages": [HumanMessage(content="What is the weather?")]
-    }
+    state = {"kb_grade": "weak", "messages": [HumanMessage(content="What is the weather?")]}
     with patch("agenticrag.nodes.get_settings") as mock_settings:
         mock_settings.return_value.web_fallback_enabled = False
         assert decide_after_kb_grade(state) == "answer_insufficient"
 
 
 def test_decide_after_kb_grade_proprietary_policy_skips_web():
-    state = {
-        "kb_grade": "weak",
-        "messages": [HumanMessage(content="What is your return policy?")]
-    }
+    state = {"kb_grade": "weak", "messages": [HumanMessage(content="What is your return policy?")]}
     assert decide_after_kb_grade(state) == "answer_insufficient"
 
 
@@ -162,6 +170,7 @@ def test_retriever_backoff_on_failure():
         mock_settings.return_value.namespace = "test-ns"
 
         import agenticrag.clients as cfg
+
         cfg._vectorstore_client = None
         cfg._retriever_client = None
         cfg._last_retriever_failure_time = 0.0

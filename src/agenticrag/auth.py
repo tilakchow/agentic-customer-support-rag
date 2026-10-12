@@ -22,13 +22,10 @@ async def verify_api_key(api_key: str | None = Security(api_key_header)) -> str 
     if not api_key:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Missing required API key in X-API-Key header."
+            detail="Missing required API key in X-API-Key header.",
         )
 
     if not hmac.compare_digest(api_key.encode("utf-8"), configured_key.encode("utf-8")):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Invalid API key."
-        )
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid API key.")
 
     return api_key

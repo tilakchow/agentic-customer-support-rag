@@ -46,7 +46,7 @@ def create_agent():
         {
             NodeName.RETRIEVE_KB.value: NodeName.RETRIEVE_KB.value,
             NodeName.DIRECT_ANSWER.value: NodeName.DIRECT_ANSWER.value,
-        }
+        },
     )
 
     workflow.add_edge(NodeName.RETRIEVE_KB.value, NodeName.GRADE_KB_EVIDENCE.value)
@@ -57,7 +57,7 @@ def create_agent():
             NodeName.GENERATE_FROM_KB.value: NodeName.GENERATE_FROM_KB.value,
             NodeName.SEARCH_WEB.value: NodeName.SEARCH_WEB.value,
             NodeName.ANSWER_INSUFFICIENT.value: NodeName.ANSWER_INSUFFICIENT.value,
-        }
+        },
     )
 
     workflow.add_edge(NodeName.SEARCH_WEB.value, NodeName.GRADE_WEB_EVIDENCE.value)
@@ -68,11 +68,11 @@ def create_agent():
             NodeName.GENERATE_FROM_WEB.value: NodeName.GENERATE_FROM_WEB.value,
             NodeName.REWRITE_QUERY.value: NodeName.REWRITE_QUERY.value,
             NodeName.ANSWER_INSUFFICIENT.value: NodeName.ANSWER_INSUFFICIENT.value,
-        }
+        },
     )
 
     workflow.add_edge(NodeName.REWRITE_QUERY.value, NodeName.RETRIEVE_KB.value)
-    
+
     workflow.add_edge(NodeName.GENERATE_FROM_KB.value, END)
     workflow.add_edge(NodeName.GENERATE_FROM_WEB.value, END)
     workflow.add_edge(NodeName.DIRECT_ANSWER.value, END)
@@ -83,11 +83,13 @@ def create_agent():
         import sqlite3
 
         from langgraph.checkpoint.sqlite import SqliteSaver
+
         conn = sqlite3.connect(settings.checkpoint_db, check_same_thread=False)
         checkpointer = SqliteSaver(conn)
     else:
         # In-memory checkpointer (dev-only; for production persistence set CHECKPOINT_DB)
         from langgraph.checkpoint.memory import MemorySaver
+
         checkpointer = MemorySaver()
 
     return workflow.compile(checkpointer=checkpointer)
