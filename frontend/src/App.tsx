@@ -8,82 +8,50 @@ import { WorkflowPanel } from "./components/WorkflowPanel"
 import { KBView } from "./components/views/KBView"
 import { HistoryView, SavedThread } from "./components/views/HistoryView"
 import { SettingsView } from "./components/views/SettingsView"
-import { streamMessage, checkHealth } from "./services/api"
+import { ErrorBoundary } from "./components/ErrorBoundary"
+import { useThreads } from "./hooks/useThreads"
+import { useChatStream } from "./hooks/useChatStream"
+import { checkHealth } from "./services/api"
 
-export function App() {
+export function AppContent() {
   const [messages, setMessages] = useState<MessageItem[]>([])
   const [input, setInput] = useState("")
-  const [loading, setLoading] = useState(false)
-  const [statusMessage, setStatusMessage] = useState<string>("")
-  const [activeNode, setActiveNode] = useState<string | undefined>(undefined)
-  const [visitedNodes, setVisitedNodes] = useState<string[]>([])
   const [showWorkflow, setShowWorkflow] = useState(true)
   const [activeTab, setActiveTab] = useState<NavTab>("chat")
   const [searchFilter, setSearchFilter] = useState("")
   const [showSearch, setShowSearch] = useState(false)
-
-  // Session Thread ID
-  const [threadId, setThreadId] = useState<string>(() => {
-    return localStorage.getItem("agentic_thread_id") || crypto.randomUUID()
-  })
   const [backendOnline, setBackendOnline] = useState(false)
-  const [errorMsg, setErrorMsg] = useState<string | null>(null)
 
-  // Saved Conversation Threads
-  const [savedThreads, setSavedThreads] = useState<SavedThread[]>(() => {
-    try {
-      const stored = localStorage.getItem("agentic_saved_threads")
-      return stored ? JSON.parse(stored) : []
-    } catch {
-      return []
-    }
-  })
+  const {
+    threadId,
+    setThreadId,
+    savedThreads,
+    createNewThread,
+    resumeThread,
+    deleteThread,
+    clearAllThreads,
+    clearStorage,
+    recordMessages,
+  } = useThreads()
+
+  const {
+    loading,
+    statusMessage,
+    activeNode,
+    visitedNodes,
+    errorMsg,
+    setErrorMsg,
+    startStream,
+    abortStream,
+  } = useChatStream({ threadId })
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
-  // Sync threadId to localStorage
+  // Sync messages to current thread
   useEffect(() => {
-    localStorage.setItem("agentic_thread_id", threadId)
-  }, [threadId])
-
-  // Sync saved threads to localStorage
-  useEffect(() => {
-    try {
-      localStorage.setItem("agentic_saved_threads", JSON.stringify(savedThreads))
-    } catch (e) {
-      console.error("Failed to save threads:", e)
-    }
-  }, [savedThreads])
-
-  // Update current thread in savedThreads whenever messages update
-  useEffect(() => {
-    if (messages.length === 0) return
-
-    const firstUserMsg = messages.find((m) => m.role === "user")?.content || "Customer Inquiry"
-    const previewText = messages[messages.length - 1].content.slice(0, 90)
-    const titleText = firstUserMsg.length > 45 ? `${firstUserMsg.slice(0, 45)}...` : firstUserMsg
-
-    setSavedThreads((prev) => {
-      const existingIdx = prev.findIndex((t) => t.threadId === threadId)
-      const updatedItem: SavedThread = {
-        threadId,
-        title: titleText,
-        preview: previewText,
-        updatedAt: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-        messageCount: messages.length,
-        messages,
-      }
-
-      if (existingIdx >= 0) {
-        const copy = [...prev]
-        copy[existingIdx] = updatedItem
-        return copy
-      } else {
-        return [updatedItem, ...prev]
-      }
-    })
-  }, [messages, threadId])
+    recordMessages(threadId, messages)
+  }, [messages, threadId, recordMessages])
 
   // Periodic health check
   useEffect(() => {
@@ -114,14 +82,11 @@ export function App() {
 
   // Handle New Chat
   const handleNewChat = () => {
-    const newId = crypto.randomUUID()
-    setThreadId(newId)
+    abortStream()
+    createNewThread()
     setMessages([])
     setErrorMsg(null)
     setInput("")
-    setStatusMessage("")
-    setActiveNode(undefined)
-    setVisitedNodes([])
     setActiveTab("chat")
     setShowSearch(false)
     setSearchFilter("")
@@ -129,33 +94,10 @@ export function App() {
 
   // Resume past thread from History view
   const handleResumeThread = (thread: SavedThread) => {
-    setThreadId(thread.threadId)
+    abortStream()
+    resumeThread(thread)
     setMessages(thread.messages)
     setActiveTab("chat")
-    setActiveNode(undefined)
-    setVisitedNodes([])
-  }
-
-  // Delete thread
-  const handleDeleteThread = (delId: string) => {
-    setSavedThreads((prev) => prev.filter((t) => t.threadId !== delId))
-    if (delId === threadId) {
-      handleNewChat()
-    }
-  }
-
-  // Clear all threads
-  const handleClearAllThreads = () => {
-    setSavedThreads([])
-    handleNewChat()
-  }
-
-  // Reset Storage from Settings
-  const handleClearStorage = () => {
-    localStorage.removeItem("agentic_saved_threads")
-    localStorage.removeItem("agentic_thread_id")
-    setSavedThreads([])
-    handleNewChat()
   }
 
   // Send message with streaming
@@ -165,8 +107,6 @@ export function App() {
 
     setActiveTab("chat")
     setErrorMsg(null)
-    setActiveNode("route_question")
-    setVisitedNodes(["route_question"])
 
     const userTimestamp = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
     const userMsg: MessageItem = {
@@ -186,73 +126,40 @@ export function App() {
 
     setMessages((prev) => [...prev, userMsg, initialAssistantMsg])
     setInput("")
-    setLoading(true)
-    setStatusMessage("Routing question...")
 
     if (textareaRef.current) {
       textareaRef.current.style.height = "auto"
     }
 
-    try {
-      await streamMessage(
-        {
-          message: query,
-          thread_id: threadId,
-        },
-        {
-          onStatus: (status, node) => {
-            setStatusMessage(status)
-            if (node) {
-              setActiveNode(node)
-              setVisitedNodes((prev) => Array.from(new Set([...prev, node])))
+    await startStream(query, threadId, {
+      onToken: (token) => {
+        setMessages((prev) =>
+          prev.map((msg) =>
+            msg.id === assistantId ? { ...msg, content: msg.content + token } : msg
+          )
+        )
+      },
+      onDone: (data) => {
+        setMessages((prev) =>
+          prev.map((msg) => {
+            if (msg.id === assistantId) {
+              return {
+                ...msg,
+                content: msg.content || data.full_content || "",
+                source: data.source_used,
+              }
             }
-          },
-          onToken: (token) => {
-            setMessages((prev) =>
-              prev.map((msg) =>
-                msg.id === assistantId ? { ...msg, content: msg.content + token } : msg
-              )
-            )
-          },
-          onDone: (data) => {
-            setMessages((prev) =>
-              prev.map((msg) => {
-                if (msg.id === assistantId) {
-                  return {
-                    ...msg,
-                    content: msg.content || data.full_content || "",
-                    source: data.source_used,
-                  }
-                }
-                return msg
-              })
-            )
-            if (data.thread_id && data.thread_id !== threadId) {
-              setThreadId(data.thread_id)
-            }
-            setActiveNode(undefined)
-            setStatusMessage("")
-            setLoading(false)
-          },
-          onError: (err) => {
-            setErrorMsg(err)
-            setActiveNode(undefined)
-            setStatusMessage("")
-            setLoading(false)
-            setMessages((prev) => prev.filter((msg) => msg.id !== assistantId || msg.content.length > 0))
-          },
+            return msg
+          })
+        )
+        if (data.thread_id && data.thread_id !== threadId) {
+          setThreadId(data.thread_id)
         }
-      )
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Failed to reach the agent. Please verify that FastAPI is running."
-      setErrorMsg(msg)
-      setActiveNode(undefined)
-      setMessages((prev) => prev.filter((msg) => msg.id !== assistantId || msg.content.length > 0))
-    } finally {
-      setLoading(false)
-      setActiveNode(undefined)
-      setStatusMessage("")
-    }
+      },
+      onError: () => {
+        setMessages((prev) => prev.filter((msg) => msg.id !== assistantId || msg.content.length > 0))
+      },
+    })
   }
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -290,7 +197,7 @@ export function App() {
 
       {/* Main Workspace with Slim Sidebar */}
       <div className="flex-1 flex overflow-hidden">
-        {/* Slim Left Sidebar (Fully Functional Tabs!) */}
+        {/* Slim Left Sidebar */}
         <Sidebar
           activeTab={activeTab}
           onSelectTab={(tab) => setActiveTab(tab)}
@@ -373,7 +280,7 @@ export function App() {
                 </div>
               </main>
 
-              {/* Bottom Input Area matching reference design */}
+              {/* Bottom Input Area */}
               <div className="p-4 bg-gradient-to-t from-[#f8fafc] via-[#f8fafc]/90 to-transparent">
                 <div className="max-w-3xl mx-auto">
                   <div className="flex items-center gap-2 rounded-2xl border border-slate-300/90 bg-white px-3.5 py-2 shadow-xs focus-within:border-blue-500 focus-within:ring-1 focus-within:ring-blue-500 transition-all">
@@ -424,7 +331,7 @@ export function App() {
             </div>
           )}
 
-          {/* TAB 2: KB (Knowledge Base Inspector View) */}
+          {/* TAB 2: KB View */}
           {activeTab === "kb" && (
             <KBView
               onAskInChat={(query) => {
@@ -439,8 +346,8 @@ export function App() {
               currentThreadId={threadId}
               threads={savedThreads}
               onResumeThread={handleResumeThread}
-              onDeleteThread={handleDeleteThread}
-              onClearAll={handleClearAllThreads}
+              onDeleteThread={deleteThread}
+              onClearAll={clearAllThreads}
               onNewChat={handleNewChat}
             />
           )}
@@ -450,11 +357,11 @@ export function App() {
             <SettingsView
               backendOnline={backendOnline}
               onResetSession={handleNewChat}
-              onClearStorage={handleClearStorage}
+              onClearStorage={clearStorage}
             />
           )}
 
-          {/* Right-Side LangGraph Workflow Panel (Visible in Chat view) */}
+          {/* Right-Side LangGraph Workflow Panel */}
           {activeTab === "chat" && showWorkflow && (
             <aside className="border-l border-slate-200/90 bg-white/50 p-4 hidden md:flex items-start overflow-y-auto">
               <WorkflowPanel
@@ -467,6 +374,14 @@ export function App() {
         </div>
       </div>
     </div>
+  )
+}
+
+export function App() {
+  return (
+    <ErrorBoundary>
+      <AppContent />
+    </ErrorBoundary>
   )
 }
 
