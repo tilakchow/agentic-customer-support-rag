@@ -1,7 +1,8 @@
 import logging
 from functools import lru_cache
-from typing import Literal, List
-from pydantic import BaseModel, Field, model_validator, field_validator
+from typing import Literal
+
+from pydantic import BaseModel, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 logger = logging.getLogger(__name__)
@@ -12,7 +13,8 @@ class Settings(BaseSettings):
     groq_api_key: str = Field(default="", validation_alias="GROQ_API_KEY")
     pinecone_api_key: str = Field(default="", validation_alias="PINECONE_API_KEY")
     tavily_api_key: str = Field(default="", validation_alias="TAVILY_API_KEY")
-    api_key: str = Field(default="", validation_alias="API_KEY")  # Optional secret for client auth
+    api_key: str = Field(default="", validation_alias="API_KEY")  # Optional secret for client auth; unset means public
+    require_api_key: bool = Field(default=False, validation_alias="REQUIRE_API_KEY")
 
     index_name: str = Field(default="industry-agentic-rag-kb", validation_alias="INDEX_NAME")
     namespace: str = Field(default="bitext-support", validation_alias="NAMESPACE")
@@ -21,7 +23,7 @@ class Settings(BaseSettings):
     max_retries: int = Field(default=1, validation_alias="MAX_RETRIES")
 
     # Security & Policy Settings
-    allowed_origins: List[str] = [
+    allowed_origins: list[str] = [
         "http://localhost:5173",
         "http://127.0.0.1:5173",
         "http://localhost:3000",
@@ -177,8 +179,8 @@ def get_retriever():
             logger.warning("PINECONE_API_KEY is not set. Pinecone retriever is disabled.")
             return None
         try:
-            from pinecone import Pinecone
             from langchain_pinecone import PineconeVectorStore
+            from pinecone import Pinecone
 
             pc = Pinecone(api_key=settings.pinecone_api_key)
             index = pc.Index(settings.index_name)

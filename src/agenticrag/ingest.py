@@ -1,16 +1,16 @@
 """Idempotent ingestion pipeline for Bitext customer support dataset into Pinecone."""
 
-import os
 import hashlib
 import logging
-from dotenv import load_dotenv
+
 from datasets import load_dataset
+from dotenv import load_dotenv
 from langchain_core.documents import Document
-from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_pinecone import PineconeVectorStore
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 from pinecone import Pinecone, ServerlessSpec
 
-from agenticrag.config import get_settings, get_embeddings, INDEX_NAME, NAMESPACE
+from agenticrag.config import INDEX_NAME, NAMESPACE, get_embeddings, get_settings
 
 load_dotenv()
 logger = logging.getLogger(__name__)

@@ -94,13 +94,13 @@ graph TD
 This codebase implements production-grade security and reliability patterns:
 
 - ⚡ **Async-First Concurrency**: All LangGraph invocations use `await agent_app.ainvoke(...)` and `agent_app.astream(...)`, preventing event-loop serialization under concurrent traffic.
-- 🔒 **API Key Authentication**: Configurable `X-API-Key` header authentication protecting `/chat` and `/chat/stream`.
-- 🛑 **Rate Limiting**: Integrated **SlowAPI** client throttling (default `20/minute` per client IP).
+- 🔒 **API Key Authentication**: Configurable `X-API-Key` header authentication (using constant-time `hmac.compare_digest`). Set `REQUIRE_API_KEY=true` to enforce key presence at startup (unset `API_KEY` leaves endpoints public). *Note: Any API key placed in a client-side browser bundle (such as `VITE_API_KEY`) is not secret since browser assets can be inspected; in high-security production deployments, a backend proxy or server-side authentication layer is the real fix.*
+- 🛑 **Rate Limiting**: Integrated **SlowAPI** client throttling (default `20/minute` per client IP) with proxy header support.
 - 📏 **Input Caps & Sanitization**: Validates user messages (1 to 1,500 characters), trims whitespace, and prevents blank session hijacking via clean UUID generation.
-- 🛡️ **Tavily Error Containment**: Traps web search API timeouts or rate limits into a explicit `web_search_failed` flag, preventing error traces from leaking into generation prompts or being evaluated as factual data.
+- 🛡️ **Prompt Injection Hardening & Tavily Error Containment**: System prompts sent via `SystemMessage` with explicit `<context>...</context>` untrusted delimiters, and search error containment preventing error leaks.
 - 🧩 **Zero Import Side-Effects**: Lazy client factories (`get_llm()`, `get_retriever()`, `get_web_search()`) and `pydantic-settings` validation executed inside FastAPI's `lifespan` handler. Code can be imported and tested offline without network connectivity.
 - 🔁 **Deterministic Ingestion**: Document chunks are hashed deterministically (`doc_hash_chunk_idx`), preventing vector duplication upon repeated ingest runs.
-- 🌐 **Strict CORS Policies**: Preconfigured allowed origins preventing unauthorized cross-origin requests.
+- 🌐 **Strict CORS Policies**: Preconfigured explicit allowed origins (`ALLOWED_ORIGINS`) preventing unauthorized cross-origin requests.
 
 ---
 

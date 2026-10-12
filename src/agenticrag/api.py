@@ -1,24 +1,24 @@
-"""FastAPI production-grade API for Agentic Customer Support RAG."""
-
-import os
-import re
-import uuid
+import hmac
 import json
-import time
 import logging
+import re
+import time
+import uuid
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from typing import Optional, AsyncGenerator, Dict, Tuple
-from fastapi import FastAPI, HTTPException, Request, Security, Depends
-from fastapi.security import APIKeyHeader
+
+from fastapi import Depends, FastAPI, HTTPException, Request, Security
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field, field_validator
+from fastapi.security import APIKeyHeader
 from langchain_core.messages import HumanMessage
+from pydantic import BaseModel, Field, field_validator
 from slowapi import Limiter, _rate_limit_exceeded_handler
-from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
 
-from agenticrag.config import get_settings, get_retriever
+from agenticrag.config import get_retriever, get_settings
+from agenticrag.constants import DATASET_NAME, EMBEDDING_DIM, KB_SAMPLE_SIZE, RETRIEVER_K
 from agenticrag.graph import get_agent_app
 from agenticrag.nodes import get_node_status_message, is_generation_node
 
@@ -31,11 +31,11 @@ limiter = Limiter(key_func=get_remote_address, default_limits=["60/minute"])
 api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 
 
-async def verify_api_key(api_key: Optional[str] = Security(api_key_header)) -> Optional[str]:
-    """Validates the API key if configured in settings; allows pass-through in development."""
+async def verify_api_key(api_key: str | None = Security(api_key_header)) -> str | None:
+    """Validates the API key if configured; unset API_KEY means public access."""
     configured_key = get_settings().api_key
     if configured_key:
-        if not api_key or api_key != configured_key:
+        if not api_key or not hmac.compare_digest(api_key, configured_key):
             raise HTTPException(
                 status_code=401,
                 detail="Invalid or missing API key in 'X-API-Key' header."
@@ -45,10 +45,10 @@ async def verify_api_key(api_key: Optional[str] = Security(api_key_header)) -> O
 
 # --- In-Memory Short-TTL Answer Cache for Repeats ---
 # Cache key: (clean_question, thread_id) -> (answer, source_used, expiry_timestamp)
-_RESPONSE_CACHE: Dict[Tuple[str, str], Tuple[str, str, float]] = {}
+_RESPONSE_CACHE: dict[tuple[str, str], tuple[str, str, float]] = {}
 
 
-def get_cached_response(query: str, thread_id: str) -> Optional[Tuple[str, str]]:
+def get_cached_response(query: str, thread_id: str) -> tuple[str, str] | None:
     key = (query.strip().lower(), thread_id)
     if key in _RESPONSE_CACHE:
         answer, source, expiry = _RESPONSE_CACHE[key]
@@ -73,6 +73,8 @@ async def lifespan(app: FastAPI):
     """Initializes, validates dependencies, and pre-compiles graph at startup."""
     logger.info("Initializing Agentic-RAG backend lifespan...")
     settings = get_settings()
+    if settings.require_api_key and not settings.api_key:
+        raise RuntimeError("REQUIRE_API_KEY is true, but API_KEY is empty or not configured.")
     settings.validate_runtime_keys(strict=False)
 
     # Pre-compile the agent graph on startup
@@ -95,11 +97,10 @@ app = FastAPI(
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
-# Configure CORS with strict explicit origins plus Vercel deployment support
+# Configure CORS with strict explicit origins
 app.add_middleware(
     CORSMiddleware,
     allow_origins=get_settings().allowed_origins,
-    allow_origin_regex=r"^https://.*\.vercel\.app$",
     allow_credentials=True,
     allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["*"],
@@ -111,7 +112,7 @@ def get_current_agent():
     return getattr(app.state, "agent_app", None) or get_agent_app()
 
 
-def clean_thread_id(raw_thread_id: Optional[str]) -> str:
+def clean_thread_id(raw_thread_id: str | None) -> str:
     """Sanitizes thread_id and resolves whitespace bugs to avoid session collision."""
     cleaned = (raw_thread_id or "").strip()
     if not cleaned:
@@ -128,11 +129,11 @@ class ChatRequest(BaseModel):
         max_length=1500,
         description="User question or statement (max 1500 characters)"
     )
-    thread_id: Optional[str] = Field(
+    thread_id: str | None = Field(
         None,
         description="Session/Thread identifier for conversation memory"
     )
-    stream: Optional[bool] = Field(
+    stream: bool | None = Field(
         False,
         description="Whether to stream the response as Server-Sent Events (SSE)"
     )
@@ -149,7 +150,7 @@ class ChatRequest(BaseModel):
 class ChatResponse(BaseModel):
     response: str = Field(..., description="Assistant's response text")
     thread_id: str = Field(..., description="Active thread ID for conversational continuity")
-    source_used: Optional[str] = Field(None, description="Data source used (private_kb, web_search, direct, etc.)")
+    source_used: str | None = Field(None, description="Data source used (private_kb, web_search, direct, etc.)")
 
 
 @app.get("/")
@@ -171,7 +172,11 @@ def health_check():
 
 
 @app.get("/kb/info")
-def kb_info_endpoint():
+@limiter.limit("30/minute")
+def kb_info_endpoint(
+    request: Request,
+    _auth: str | None = Depends(verify_api_key)
+):
     """Returns knowledge base vector store metadata and index status."""
     settings = get_settings()
     retriever_instance = get_retriever()
@@ -179,11 +184,11 @@ def kb_info_endpoint():
         "index_name": settings.index_name,
         "namespace": settings.namespace,
         "embedding_model": settings.embedding_model,
-        "dimension": 384,
-        "dataset": "bitext/Bitext-customer-support-llm-chatbot-training-dataset",
-        "sample_size": 500,
+        "dimension": EMBEDDING_DIM,
+        "dataset": DATASET_NAME,
+        "sample_size": KB_SAMPLE_SIZE,
         "primary_intent": "cancel_order & support policies",
-        "retriever_k": 4,
+        "retriever_k": RETRIEVER_K,
         "status": "connected" if retriever_instance is not None else "disconnected"
     }
 
@@ -197,7 +202,7 @@ class KBSearchRequest(BaseModel):
 def kb_search_endpoint(
     request: Request,
     body: KBSearchRequest,
-    _auth: Optional[str] = Depends(verify_api_key)
+    _auth: str | None = Depends(verify_api_key)
 ):
     """Direct vector search endpoint with rate limiting and authentication."""
     retriever_instance = get_retriever()
@@ -217,10 +222,10 @@ def kb_search_endpoint(
         }
     except Exception as e:
         logger.error("[KBSearch Error]: %s", e, exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to execute search in knowledge base.")
+        raise HTTPException(status_code=500, detail="Failed to execute search in knowledge base.") from e
 
 
-async def stream_agent_generator(message: str, thread_id: str) -> AsyncGenerator[str, None]:
+async def stream_agent_generator(message: str, thread_id: str) -> AsyncGenerator[str]:
     """Generates Server-Sent Events asynchronously without blocking the Uvicorn event loop."""
     # Check short-TTL cache for duplicate query
     cached = get_cached_response(message, thread_id)
@@ -293,7 +298,7 @@ async def stream_agent_generator(message: str, thread_id: str) -> AsyncGenerator
 async def chat_endpoint(
     request: Request,
     body: ChatRequest,
-    _auth: Optional[str] = Depends(verify_api_key)
+    _auth: str | None = Depends(verify_api_key)
 ):
     """Chat endpoint supporting both JSON response and SSE streaming."""
     thread_id = clean_thread_id(body.thread_id)
@@ -348,7 +353,7 @@ async def chat_endpoint(
         raise HTTPException(
             status_code=500,
             detail="An error occurred while processing your request. Please try again later."
-        )
+        ) from e
 
 
 @app.post("/chat/stream")
@@ -356,7 +361,7 @@ async def chat_endpoint(
 async def chat_stream_endpoint(
     request: Request,
     body: ChatRequest,
-    _auth: Optional[str] = Depends(verify_api_key)
+    _auth: str | None = Depends(verify_api_key)
 ):
     """Direct Server-Sent Events streaming endpoint with rate limits."""
     thread_id = clean_thread_id(body.thread_id)

@@ -1,7 +1,7 @@
 FROM python:3.14-slim
 
-# Install uv from the official image
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
+# Install uv from pinned official image
+COPY --from=ghcr.io/astral-sh/uv:0.5.15 /uv /bin/uv
 
 # Set working directory
 WORKDIR /app
@@ -19,9 +19,16 @@ COPY src/ ./src/
 # Install the project itself
 RUN uv sync --frozen --no-dev
 
+# Create non-root user and set permissions
+RUN useradd -m -u 1000 appuser && chown -R appuser:appuser /app
+USER appuser
+
 # Expose port for FastAPI (Hugging Face Spaces requires 7860)
 EXPOSE 7860
 
-# Run the FastAPI app directly from the virtual environment. 
-# We use the shell form so $PORT is evaluated (Defaults to 7860 for Hugging Face).
-CMD /app/.venv/bin/uvicorn src.agenticrag.api:app --host 0.0.0.0 --port ${PORT:-7860}
+# Health check on /health
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD /app/.venv/bin/python -c "import urllib.request, os; p = os.environ.get('PORT', '7860'); urllib.request.urlopen(f'http://localhost:{p}/health')" || exit 1
+
+# Run the FastAPI app with proxy headers and configurable forwarded-allow-ips
+CMD /app/.venv/bin/uvicorn agenticrag.api:app --host 0.0.0.0 --port ${PORT:-7860} --proxy-headers --forwarded-allow-ips="${FORWARDED_ALLOW_IPS:-*}"

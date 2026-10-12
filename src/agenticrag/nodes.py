@@ -1,35 +1,36 @@
 """Core LangGraph nodes and decision-making logic for Agentic Customer Support RAG."""
 
 import logging
-from enum import Enum
-from typing import List, Literal, Annotated, Dict, Any, Optional
-from typing_extensions import TypedDict
+from enum import StrEnum
+from typing import Annotated, Any, Literal
+
 from langchain_core.documents import Document
-from langchain_core.messages import HumanMessage, AIMessage, AnyMessage
+from langchain_core.messages import AIMessage, AnyMessage, HumanMessage, SystemMessage
 from langgraph.graph.message import add_messages
+from typing_extensions import TypedDict
 
 from agenticrag.config import (
-    INDEX_NAME,
-    NAMESPACE,
     MAX_RETRIES,
-    get_llm,
-    get_router_llm,
     get_kb_grader_llm,
+    get_llm,
+    get_retriever,
+    get_router_llm,
     get_web_grader_llm,
     get_web_search,
-    get_retriever,
-    retriever,
 )
 from agenticrag.prompts import (
     CUSTOMER_SUPPORT_SYSTEM_PROMPT,
-    ROUTER_PROMPT_TEMPLATE,
-    KB_GRADER_PROMPT_TEMPLATE,
-    WEB_GRADER_PROMPT_TEMPLATE,
-    REWRITE_QUERY_PROMPT_TEMPLATE,
-    KB_GENERATION_PROMPT_TEMPLATE,
-    WEB_GENERATION_PROMPT_TEMPLATE,
     DIRECT_ANSWER_PROMPT_TEMPLATE,
     INSUFFICIENT_EVIDENCE_PROMPT_TEMPLATE,
+    KB_GENERATION_HUMAN_TEMPLATE,
+    KB_GRADER_HUMAN_TEMPLATE,
+    KB_GRADER_SYSTEM_PROMPT,
+    REWRITE_QUERY_PROMPT_TEMPLATE,
+    ROUTER_PROMPT_TEMPLATE,
+    UNTRUSTED_CONTEXT_INSTRUCTION,
+    WEB_GENERATION_HUMAN_TEMPLATE,
+    WEB_GRADER_HUMAN_TEMPLATE,
+    WEB_GRADER_SYSTEM_PROMPT,
 )
 
 logger = logging.getLogger(__name__)
@@ -37,7 +38,7 @@ logger = logging.getLogger(__name__)
 
 # --- Shared Graph Node Enum & Metadata ---
 
-class NodeName(str, Enum):
+class NodeName(StrEnum):
     """Enumeration of all node identifiers across the agent state graph."""
     ROUTE_QUESTION = "route_question"
     RETRIEVE_KB = "retrieve_kb"
@@ -51,7 +52,7 @@ class NodeName(str, Enum):
     ANSWER_INSUFFICIENT = "answer_insufficient"
 
 
-NODE_METADATA: Dict[str, Dict[str, Any]] = {
+NODE_METADATA: dict[str, dict[str, Any]] = {
     NodeName.ROUTE_QUESTION.value: {
         "status_message": "Analyzing question & routing...",
         "is_generation": False,
@@ -113,7 +114,7 @@ class AgentState(TypedDict):
     """Execution state schema passed across all LangGraph nodes."""
     messages: Annotated[list[AnyMessage], add_messages]
     current_query: str
-    kb_docs: List[Document]
+    kb_docs: list[Document]
     web_results: str
     web_search_failed: bool
     kb_grade: str
@@ -158,7 +159,7 @@ def get_conversation_history(state: AgentState, limit: int = 6) -> str:
 
 # --- Graph Nodes ---
 
-def route_question(state: AgentState) -> Dict[str, Any]:
+def route_question(state: AgentState) -> dict[str, Any]:
     """Analyzes user inquiry and classifies route to private knowledge base or direct conversation."""
     question = get_latest_question(state)
     history = get_conversation_history(state)
@@ -182,7 +183,7 @@ def route_after_router(state: AgentState) -> Literal["retrieve_kb", "direct_answ
     return NodeName.DIRECT_ANSWER.value
 
 
-def retrieve_kb(state: AgentState) -> Dict[str, Any]:
+def retrieve_kb(state: AgentState) -> dict[str, Any]:
     """Queries Pinecone vector store using the current search query."""
     query = state.get("current_query", "")
     retriever_client = get_retriever()
@@ -198,7 +199,7 @@ def retrieve_kb(state: AgentState) -> Dict[str, Any]:
     return {"kb_docs": docs}
 
 
-def grade_kb_evidence(state: AgentState) -> Dict[str, Any]:
+def grade_kb_evidence(state: AgentState) -> dict[str, Any]:
     """Evaluates whether retrieved knowledge base documents are sufficient to answer the inquiry."""
     question = get_latest_question(state)
     docs = state.get("kb_docs", [])
@@ -211,8 +212,11 @@ def grade_kb_evidence(state: AgentState) -> Dict[str, Any]:
         for doc in docs
     )
 
-    prompt = KB_GRADER_PROMPT_TEMPLATE.format(question=question, context=context)
-    grade = get_kb_grader_llm().invoke(prompt)
+    messages = [
+        SystemMessage(content=KB_GRADER_SYSTEM_PROMPT),
+        HumanMessage(content=KB_GRADER_HUMAN_TEMPLATE.format(question=question, context=context)),
+    ]
+    grade = get_kb_grader_llm().invoke(messages)
     logger.info("[KB Grader] Evidence grade: %s", grade.grade)
     return {"kb_grade": grade.grade}
 
@@ -243,7 +247,7 @@ def decide_after_kb_grade(state: AgentState) -> Literal["generate_from_kb", "sea
     return NodeName.SEARCH_WEB.value
 
 
-def search_web(state: AgentState) -> Dict[str, Any]:
+def search_web(state: AgentState) -> dict[str, Any]:
     """Executes external web search via Tavily. Catches errors safely to prevent error leak."""
     query = state.get("current_query", "")
     logger.info("[Tavily Search] Query: %s", query)
@@ -265,7 +269,7 @@ def search_web(state: AgentState) -> Dict[str, Any]:
         return {"web_results": "", "web_search_failed": True}
 
 
-def grade_web_evidence(state: AgentState) -> Dict[str, Any]:
+def grade_web_evidence(state: AgentState) -> dict[str, Any]:
     """Evaluates whether web search results are relevant and sufficient to answer the question."""
     if state.get("web_search_failed", False):
         logger.warning("[Web Grader] Web search failed earlier. Bypassing LLM grading and setting weak grade.")
@@ -276,8 +280,11 @@ def grade_web_evidence(state: AgentState) -> Dict[str, Any]:
         return {"web_grade": "weak"}
 
     question = get_latest_question(state)
-    prompt = WEB_GRADER_PROMPT_TEMPLATE.format(question=question, web_results=web_results)
-    grade = get_web_grader_llm().invoke(prompt)
+    messages = [
+        SystemMessage(content=WEB_GRADER_SYSTEM_PROMPT),
+        HumanMessage(content=WEB_GRADER_HUMAN_TEMPLATE.format(question=question, web_results=web_results)),
+    ]
+    grade = get_web_grader_llm().invoke(messages)
     logger.info("[Web Grader] Evidence grade: %s", grade.grade)
     return {"web_grade": grade.grade}
 
@@ -295,7 +302,7 @@ def decide_after_web_grade(state: AgentState) -> Literal["generate_from_web", "r
     return NodeName.ANSWER_INSUFFICIENT.value
 
 
-def rewrite_query(state: AgentState) -> Dict[str, Any]:
+def rewrite_query(state: AgentState) -> dict[str, Any]:
     """Rewrites inquiry to optimize retrieval precision for subsequent searches."""
     question = get_latest_question(state)
     retry_count = state.get("retry_count", 0) + 1
@@ -305,7 +312,7 @@ def rewrite_query(state: AgentState) -> Dict[str, Any]:
     return {"current_query": rewritten, "retry_count": retry_count}
 
 
-def generate_from_kb(state: AgentState) -> Dict[str, Any]:
+def generate_from_kb(state: AgentState) -> dict[str, Any]:
     """Synthesizes customer response grounded in retrieved internal knowledge base documents."""
     question = get_latest_question(state)
     history = get_conversation_history(state)
@@ -313,32 +320,34 @@ def generate_from_kb(state: AgentState) -> Dict[str, Any]:
         f"[KB Source: {doc.metadata.get('source', 'unknown')}]\n{doc.page_content}"
         for doc in state.get("kb_docs", [])
     )
-    prompt = KB_GENERATION_PROMPT_TEMPLATE.format(
-        system_prompt=CUSTOMER_SUPPORT_SYSTEM_PROMPT,
+    system_text = CUSTOMER_SUPPORT_SYSTEM_PROMPT + UNTRUSTED_CONTEXT_INSTRUCTION
+    human_text = KB_GENERATION_HUMAN_TEMPLATE.format(
         context=context,
         history=history,
-        question=question
+        question=question,
     )
-    answer = get_llm().invoke(prompt).content
+    messages = [SystemMessage(content=system_text), HumanMessage(content=human_text)]
+    answer = get_llm().invoke(messages).content
     return {"messages": [AIMessage(content=answer)], "source_used": "private_kb"}
 
 
-def generate_from_web(state: AgentState) -> Dict[str, Any]:
+def generate_from_web(state: AgentState) -> dict[str, Any]:
     """Synthesizes customer response grounded in verified external web search information."""
     question = get_latest_question(state)
     history = get_conversation_history(state)
     web_context = state.get("web_results", "")
-    prompt = WEB_GENERATION_PROMPT_TEMPLATE.format(
-        system_prompt=CUSTOMER_SUPPORT_SYSTEM_PROMPT,
+    system_text = CUSTOMER_SUPPORT_SYSTEM_PROMPT + UNTRUSTED_CONTEXT_INSTRUCTION
+    human_text = WEB_GENERATION_HUMAN_TEMPLATE.format(
         web_context=web_context,
         history=history,
-        question=question
+        question=question,
     )
-    answer = get_llm().invoke(prompt).content
+    messages = [SystemMessage(content=system_text), HumanMessage(content=human_text)]
+    answer = get_llm().invoke(messages).content
     return {"messages": [AIMessage(content=answer)], "source_used": "web_search"}
 
 
-def direct_answer(state: AgentState) -> Dict[str, Any]:
+def direct_answer(state: AgentState) -> dict[str, Any]:
     """Generates direct answer for greetings, conversational chit-chat, or meta questions."""
     question = get_latest_question(state)
     history = get_conversation_history(state)
@@ -351,7 +360,7 @@ def direct_answer(state: AgentState) -> Dict[str, Any]:
     return {"messages": [AIMessage(content=answer)], "source_used": "direct"}
 
 
-def answer_insufficient(state: AgentState) -> Dict[str, Any]:
+def answer_insufficient(state: AgentState) -> dict[str, Any]:
     """Generates a polite notice when knowledge base and web searches cannot answer the customer inquiry."""
     question = get_latest_question(state)
     history = get_conversation_history(state)

@@ -1,15 +1,14 @@
 """Unit tests for pure routing, grading decision functions, and history formatting."""
 
-import pytest
-from langchain_core.messages import HumanMessage, AIMessage
+from langchain_core.messages import AIMessage, HumanMessage
 
 from agenticrag.nodes import (
     NodeName,
-    route_after_router,
     decide_after_kb_grade,
     decide_after_web_grade,
-    get_latest_question,
     get_conversation_history,
+    get_latest_question,
+    route_after_router,
 )
 
 

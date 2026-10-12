@@ -1,6 +1,7 @@
 import argparse
-import sys
 import logging
+import sys
+
 
 def main() -> None:
     """CLI entrypoint for Agentic-RAG."""

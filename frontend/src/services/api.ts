@@ -35,12 +35,22 @@ export interface StreamCallbacks {
 
 // Use VITE_API_URL if set; otherwise default to deployed Render backend in production, and localhost in dev
 const API_BASE = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? "https://agentic-customer-support-rag.onrender.com" : "http://localhost:8000");
+const VITE_API_KEY = import.meta.env.VITE_API_KEY || "";
+
+function getHeaders(extraHeaders: Record<string, string> = {}): Record<string, string> {
+  const headers: Record<string, string> = { ...extraHeaders };
+  if (VITE_API_KEY) {
+    headers["X-API-Key"] = VITE_API_KEY;
+  }
+  return headers;
+}
+
 export async function sendMessage(req: ChatRequest): Promise<ChatResponse> {
   const response = await fetch(`${API_BASE}/chat`, {
     method: "POST",
-    headers: {
+    headers: getHeaders({
       "Content-Type": "application/json",
-    },
+    }),
     body: JSON.stringify(req),
   })
 
@@ -55,9 +65,9 @@ export async function sendMessage(req: ChatRequest): Promise<ChatResponse> {
 export async function streamMessage(req: ChatRequest, callbacks: StreamCallbacks): Promise<void> {
   const response = await fetch(`${API_BASE}/chat/stream`, {
     method: "POST",
-    headers: {
+    headers: getHeaders({
       "Content-Type": "application/json",
-    },
+    }),
     body: JSON.stringify(req),
   })
 
@@ -139,7 +149,9 @@ export interface KBSearchResult {
 }
 
 export async function fetchKBInfo(): Promise<KBInfoResponse> {
-  const res = await fetch(`${API_BASE}/kb/info`)
+  const res = await fetch(`${API_BASE}/kb/info`, {
+    headers: getHeaders(),
+  })
   if (!res.ok) throw new Error("Failed to load KB info")
   return res.json()
 }
@@ -147,7 +159,7 @@ export async function fetchKBInfo(): Promise<KBInfoResponse> {
 export async function searchKB(query: string): Promise<{ query: string; results: KBSearchResult[] }> {
   const res = await fetch(`${API_BASE}/kb/search`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: getHeaders({ "Content-Type": "application/json" }),
     body: JSON.stringify({ query }),
   })
   if (!res.ok) throw new Error("Failed to search KB")

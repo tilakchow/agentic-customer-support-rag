@@ -1,8 +1,8 @@
 """Contract tests for Server-Sent Events (SSE) stream payloads."""
 
 import json
-import pytest
-from agenticrag.nodes import get_node_status_message, is_generation_node, NodeName
+
+from agenticrag.nodes import NodeName, get_node_status_message, is_generation_node
 
 
 def test_status_event_contract():

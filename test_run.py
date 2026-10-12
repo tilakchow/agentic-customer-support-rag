@@ -1,11 +1,12 @@
 #!/usr/bin/env python
 """Smoke test script for Agentic-RAG pipeline verification."""
 
-import sys
 import logging
+import sys
+
 from agenticrag.config import get_settings
 from agenticrag.graph import get_agent_app
-from agenticrag.nodes import route_after_router, decide_after_kb_grade, decide_after_web_grade
+from agenticrag.nodes import decide_after_kb_grade, decide_after_web_grade, route_after_router
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("test_run")
