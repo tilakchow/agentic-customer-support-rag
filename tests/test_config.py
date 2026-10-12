@@ -145,3 +145,12 @@ def test_settings_max_thread_messages_from_env(monkeypatch):
     monkeypatch.setenv("MAX_THREAD_MESSAGES", "50")
     s = Settings()
     assert s.max_thread_messages == 50
+
+
+def test_settings_tavily_config_from_env(monkeypatch):
+    """TAVILY_TIMEOUT_SECONDS and TAVILY_MAX_CONCURRENCY parse correctly."""
+    monkeypatch.setenv("TAVILY_TIMEOUT_SECONDS", "25.0")
+    monkeypatch.setenv("TAVILY_MAX_CONCURRENCY", "8")
+    s = Settings()
+    assert s.tavily_timeout_seconds == 25.0
+    assert s.tavily_max_concurrency == 8

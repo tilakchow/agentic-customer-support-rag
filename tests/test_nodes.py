@@ -183,6 +183,38 @@ async def test_search_web_failure_sets_flag():
         assert result["web_results"] == ""
 
 
+@pytest.mark.asyncio
+async def test_search_web_timeout_sets_flag():
+    state = {"current_query": "shipping tracking"}
+    with patch("agenticrag.nodes.get_web_search") as mock_search:
+        mock_search.return_value.invoke.side_effect = TimeoutError("Tavily timed out")
+        result = await search_web(state)
+        assert result["web_search_failed"] is True
+        assert result["web_results"] == ""
+
+
+@pytest.mark.asyncio
+async def test_search_web_tavily_error_sets_flag():
+    from agenticrag.nodes import TavilyClientError
+
+    state = {"current_query": "shipping tracking"}
+    with patch("agenticrag.nodes.get_web_search") as mock_search:
+        mock_search.return_value.invoke.side_effect = TavilyClientError("Invalid API key")
+        result = await search_web(state)
+        assert result["web_search_failed"] is True
+        assert result["web_results"] == ""
+
+
+@pytest.mark.asyncio
+async def test_search_web_concurrency_semaphore():
+    import asyncio
+
+    from agenticrag.nodes import get_tavily_semaphore
+
+    sem = get_tavily_semaphore()
+    assert isinstance(sem, asyncio.Semaphore)
+
+
 def test_decide_after_kb_grade_web_fallback_disabled():
     state = {"kb_grade": "weak", "messages": [HumanMessage(content="What is the weather?")]}
     with patch("agenticrag.nodes.get_settings") as mock_settings:

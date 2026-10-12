@@ -188,30 +188,65 @@ async def grade_kb_evidence(state: AgentState) -> dict[str, Any]:
         return {"kb_grade": "weak"}
 
 
+try:
+    from tavily.errors import TavilyClientError  # type: ignore[import-not-found]
+except ImportError:
+
+    class TavilyClientError(Exception):  # type: ignore[no-redef]
+        pass
+
+
+_tavily_semaphore: asyncio.Semaphore | None = None
+
+
+def get_tavily_semaphore() -> asyncio.Semaphore:
+    global _tavily_semaphore
+    if _tavily_semaphore is None:
+        settings = get_settings()
+        _tavily_semaphore = asyncio.Semaphore(settings.tavily_max_concurrency)
+    return _tavily_semaphore
+
+
 async def search_web(state: AgentState) -> dict[str, Any]:
-    """Executes external web search via Tavily asynchronously with timeout."""
+    """Executes external web search via Tavily asynchronously with timeout and concurrency throttling."""
     query = state.get("current_query", "")
     logger.info("[Tavily Search] Query: %s", query)
     settings = get_settings()
+    timeout = settings.tavily_timeout_seconds or settings.tavily_timeout
+    sem = get_tavily_semaphore()
+
     try:
-        search_client = get_web_search()
-        result = await asyncio.wait_for(
-            asyncio.to_thread(search_client.invoke, {"query": query}),
-            timeout=settings.tavily_timeout,
+        async with sem:
+            search_client = get_web_search()
+            result = await asyncio.wait_for(
+                asyncio.to_thread(search_client.invoke, {"query": query}),
+                timeout=timeout,
+            )
+            if isinstance(result, dict):
+                lines = []
+                if result.get("answer"):
+                    lines.append(f"Tavily summary: {result.get('answer')}")
+                for item in result.get("results", []):
+                    lines.append(
+                        f"Title: {item.get('title', '')}\nContent: {item.get('content', '')}"
+                    )
+                web_text = "\n\n".join(lines) if lines else ""
+            else:
+                web_text = str(result)
+            return {"web_results": web_text, "web_search_failed": False}
+    except TimeoutError:
+        logger.warning(
+            "[Tavily Search Timeout]: Web search query '%s' timed out after %.1fs",
+            query[:50],
+            timeout,
         )
-        if isinstance(result, dict):
-            lines = []
-            if result.get("answer"):
-                lines.append(f"Tavily summary: {result.get('answer')}")
-            for item in result.get("results", []):
-                lines.append(f"Title: {item.get('title', '')}\nContent: {item.get('content', '')}")
-            web_text = "\n\n".join(lines) if lines else ""
-        else:
-            web_text = str(result)
-        return {"web_results": web_text, "web_search_failed": False}
-    except Exception as e:
-        logger.error("[Tavily Search Error]: %s", e, exc_info=True)
-        # Never store raw exception text as evidence
+        return {"web_results": "", "web_search_failed": True}
+    except (TavilyClientError, Exception) as e:
+        logger.warning(
+            "[Tavily Search Error]: Search failed for query '%s': %s",
+            query[:50],
+            e,
+        )
         return {"web_results": "", "web_search_failed": True}
 
 
