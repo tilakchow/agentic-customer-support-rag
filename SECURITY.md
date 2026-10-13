@@ -4,8 +4,8 @@
 
 If you discover a security vulnerability in this project, please report it responsibly. **Do NOT report security vulnerabilities through public GitHub issues.**
 
-Instead, please email security concerns directly to the maintainer or open a private security advisory on GitHub:
-- Maintainer Email: tilakchowdary@example.com (or via repository maintainer contact)
+Instead, please report security concerns via GitHub Private Vulnerability Reporting:
+- **GitHub Security Advisories**: Navigate to the repository's **Security** tab > **Advisories** > **Report a vulnerability** ([https://github.com/tilakchow/agentic-customer-support-rag/security/advisories](https://github.com/tilakchow/agentic-customer-support-rag/security/advisories))
 - Subject: `[SECURITY] Agentic RAG Vulnerability Report`
 
 Please include:

@@ -36,23 +36,23 @@ export interface StreamCallbacks {
 // reverse-proxy / edge functions (injecting auth and preventing direct exposure).
 // If a custom backend or direct endpoint is explicitly desired, set VITE_API_URL.
 const API_BASE = (import.meta.env.VITE_API_URL || "/api").replace(/\/$/, "");
-const API_KEY = import.meta.env.VITE_API_KEY || "";
 
 function getHeaders(extraHeaders: Record<string, string> = {}): Record<string, string> {
-  const headers: Record<string, string> = { ...extraHeaders };
-  if (API_KEY) {
-    headers["X-API-Key"] = API_KEY;
-  }
-  return headers;
+  return { ...extraHeaders };
 }
 
-export async function streamMessage(req: ChatRequest, callbacks: StreamCallbacks): Promise<void> {
+export async function streamMessage(
+  req: ChatRequest,
+  callbacks: StreamCallbacks,
+  signal?: AbortSignal
+): Promise<void> {
   const response = await fetch(`${API_BASE}/chat/stream`, {
     method: "POST",
     headers: getHeaders({
       "Content-Type": "application/json",
     }),
     body: JSON.stringify(req),
+    signal,
   })
 
   if (!response.ok) {
@@ -67,6 +67,7 @@ export async function streamMessage(req: ChatRequest, callbacks: StreamCallbacks
   const reader = response.body.getReader()
   const decoder = new TextDecoder("utf-8")
   let buffer = ""
+  let terminalReceived = false
 
   try {
     while (true) {
@@ -88,12 +89,14 @@ export async function streamMessage(req: ChatRequest, callbacks: StreamCallbacks
             } else if (event.type === "token" && event.token && callbacks.onToken) {
               callbacks.onToken(event.token)
             } else if (event.type === "done" && callbacks.onDone) {
+              terminalReceived = true
               callbacks.onDone({
                 thread_id: event.thread_id || "",
                 source_used: event.source_used,
                 full_content: event.full_content,
               })
             } else if (event.type === "error" && callbacks.onError) {
+              terminalReceived = true
               callbacks.onError(event.error || "Unknown error during streaming")
             }
           } catch (e) {
@@ -101,6 +104,12 @@ export async function streamMessage(req: ChatRequest, callbacks: StreamCallbacks
           }
         }
       }
+    }
+
+    if (!terminalReceived && !signal?.aborted) {
+      const dropMessage = "Streaming connection closed unexpectedly before completion."
+      callbacks.onError?.(dropMessage)
+      throw new Error(dropMessage)
     }
   } finally {
     reader.releaseLock()
@@ -122,11 +131,10 @@ export interface KBInfoResponse {
   namespace: string
   embedding_model: string
   dimension: number
-  dataset: string
   sample_size: number
-  primary_intent: string
   retriever_k: number
-  status: string
+  dataset: string
+  retriever_connected: boolean
 }
 
 export interface KBSearchResult {
@@ -151,4 +159,3 @@ export async function searchKB(query: string): Promise<{ query: string; results:
   if (!res.ok) throw new Error("Failed to search KB")
   return res.json()
 }
-

@@ -17,6 +17,7 @@ from agenticrag.clients import (
 )
 from agenticrag.config import get_settings
 from agenticrag.constants import RETRIEVER_K
+from agenticrag.metrics import record_provider_failure
 from agenticrag.prompts import (
     CUSTOMER_SUPPORT_SYSTEM_PROMPT,
     DIRECT_ANSWER_PROMPT_TEMPLATE,
@@ -75,6 +76,7 @@ async def route_question(state: AgentState) -> dict[str, Any]:
         route = decision.route
         logger.info("[Router] Decision: %s for query: %s", route, question[:50])
     except Exception as e:
+        record_provider_failure(e)
         logger.warning(
             "[Router Error] Failed to route query (%s). Falling back to 'kb': %s", question[:50], e
         )
@@ -93,8 +95,8 @@ async def route_question(state: AgentState) -> dict[str, Any]:
 async def retrieve_kb(state: AgentState) -> dict[str, Any]:
     """Queries Pinecone vector store using the current search query with similarity scores."""
     query = state.get("current_query", "")
-    vectorstore = get_vectorstore()
-    retriever_client = get_retriever()
+    vectorstore = await asyncio.to_thread(get_vectorstore)
+    retriever_client = await asyncio.to_thread(get_retriever)
     kb_retrieval_failed = False
     docs: list[Document] = []
     top_score = 0.0
@@ -116,6 +118,7 @@ async def retrieve_kb(state: AgentState) -> dict[str, Any]:
                 top_score = max(float(score) for _, score in scored_results)
         except Exception as e:
             logger.error("[KB Retriever Error]: %s", e, exc_info=True)
+            record_provider_failure(e)
             kb_retrieval_failed = True
             docs = []
     elif retriever_client:
@@ -123,6 +126,7 @@ async def retrieve_kb(state: AgentState) -> dict[str, Any]:
             docs = await asyncio.to_thread(retriever_client.invoke, query)
         except Exception as e:
             logger.error("[KB Retriever Error]: %s", e, exc_info=True)
+            record_provider_failure(e)
             kb_retrieval_failed = True
             docs = []
     else:
@@ -182,6 +186,7 @@ async def grade_kb_evidence(state: AgentState) -> dict[str, Any]:
         logger.info("[KB Grader] Evidence grade: %s", grade.grade)
         return {"kb_grade": grade.grade}
     except Exception as e:
+        record_provider_failure(e)
         logger.warning(
             "[KB Grader Error] Failed to grade KB evidence. Falling back to 'weak': %s", e
         )
@@ -241,9 +246,18 @@ async def search_web(state: AgentState) -> dict[str, Any]:
             timeout,
         )
         return {"web_results": "", "web_search_failed": True}
-    except (TavilyClientError, Exception) as e:
+    except TavilyClientError as e:
+        record_provider_failure(e)
         logger.warning(
             "[Tavily Search Error]: Search failed for query '%s': %s",
+            query[:50],
+            e,
+        )
+        return {"web_results": "", "web_search_failed": True}
+    except Exception as e:
+        record_provider_failure(e)
+        logger.warning(
+            "[Tavily Search Error]: Unexpected failure for query '%s': %s",
             query[:50],
             e,
         )
@@ -277,6 +291,7 @@ async def grade_web_evidence(state: AgentState) -> dict[str, Any]:
         logger.info("[Web Grader] Evidence grade: %s", grade.grade)
         return {"web_grade": grade.grade}
     except Exception as e:
+        record_provider_failure(e)
         logger.warning(
             "[Web Grader Error] Failed to grade web evidence. Falling back to 'weak': %s", e
         )
@@ -299,6 +314,7 @@ async def rewrite_query(state: AgentState) -> dict[str, Any]:
         logger.info("[Rewriter] Rewritten query: '%s' (retry: %d)", rewritten, retry_count)
         return {"current_query": rewritten, "retry_count": retry_count}
     except Exception as e:
+        record_provider_failure(e)
         logger.warning("[Rewriter Error] Failed to rewrite query. Keeping original query: %s", e)
         return {"current_query": question, "retry_count": retry_count}
 
@@ -315,6 +331,7 @@ async def _generate_support_message(
         content = _message_text(response)
         return {"messages": [AIMessage(content=str(content))], "source_used": source_used}
     except Exception as e:
+        record_provider_failure(e)
         logger.error("[%s Error] LLM generation failed: %s", source_used, e, exc_info=True)
         target_source = (
             "insufficient_evidence"

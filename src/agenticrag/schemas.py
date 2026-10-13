@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field, model_validator
 class RouteDecision(BaseModel):
     route: Literal["kb", "direct"] = Field(
         default="kb",
-        description="Use kb for questions needing Agentic RAG docs; direct for greetings/simple chat.",
+        description="Use kb for questions needing knowledge base retrieval; direct for greetings/simple chat.",
     )
 
     @model_validator(mode="before")

@@ -212,20 +212,29 @@ def test_kb_search_retriever_unavailable(client, monkeypatch):
 
 
 def test_clean_thread_id_hostile_input():
-    """Verifies that malicious or special-character thread IDs are sanitized to safe slugs."""
+    """Verifies that malicious or invalid-character thread IDs raise 422 HTTPException."""
+    import pytest
+    from fastapi import HTTPException
+
     # Path traversal attack
-    sanitized_path = clean_thread_id("../../../etc/passwd")
-    assert "/" not in sanitized_path and "." not in sanitized_path
-    assert "etcpasswd" in sanitized_path
+    with pytest.raises(HTTPException) as exc_info:
+        clean_thread_id("../../../etc/passwd")
+    assert exc_info.value.status_code == 422
 
     # XSS script injection
-    sanitized_xss = clean_thread_id("<script>alert('xss')</script>")
-    assert "<" not in sanitized_xss and ">" not in sanitized_xss and "'" not in sanitized_xss
-    assert "scriptalertxssscript" in sanitized_xss
+    with pytest.raises(HTTPException) as exc_info:
+        clean_thread_id("<script>alert('xss')</script>")
+    assert exc_info.value.status_code == 422
 
-    # Pure special characters fallback to valid uuid
-    sanitized_symbols = clean_thread_id("!@#$%^&*()")
-    assert len(sanitized_symbols) > 10
+    # Pure special characters
+    with pytest.raises(HTTPException) as exc_info:
+        clean_thread_id("!@#$%^&*()")
+    assert exc_info.value.status_code == 422
+
+    # Empty or None generates a valid uuid
+    assert len(clean_thread_id(None)) > 10
+    assert len(clean_thread_id("")) > 10
+    assert clean_thread_id("valid-thread_123") == "valid-thread_123"
 
 
 def test_production_environment_refuses_startup_without_api_key(monkeypatch):
@@ -264,7 +273,7 @@ def test_get_client_rate_limit_key_resolution(monkeypatch):
             "client": ("192.168.1.1", 12345),
         }
     )
-    assert get_client_rate_limit_key(req_valid_key) == "key:secret-token-xyz"
+    assert get_client_rate_limit_key(req_valid_key) == "192.168.1.1:key:secret-token-xyz"
 
     # 2. Fake / spoofed API key is NOT trusted and falls back to client IP
     req_fake_key = Request(
@@ -402,3 +411,67 @@ def test_lifespan_refuses_startup_in_production_when_runtime_keys_missing(monkey
                 pass
 
         asyncio.run(run_lifespan())
+
+
+def test_lifespan_refuses_when_require_api_key_without_key(monkeypatch):
+    """When require_api_key=True and API_KEY is empty, lifespan refuses to start."""
+    from fastapi import FastAPI
+
+    from agenticrag.api import lifespan
+    from agenticrag.config import Settings
+
+    settings = Settings(
+        environment="development",
+        require_api_key=True,
+        api_key="",
+        allow_in_memory_checkpoints=True,
+    )
+    monkeypatch.setattr(api_module, "get_settings", lambda: settings)
+
+    dummy_app = FastAPI()
+    with pytest.raises(RuntimeError, match="REQUIRE_API_KEY is true, but API_KEY is empty"):
+        import asyncio
+
+        async def run_lifespan():
+            async with lifespan(dummy_app):
+                pass
+
+        asyncio.run(run_lifespan())
+
+
+def test_lifespan_refuses_when_checkpointer_missing(monkeypatch):
+    """When CHECKPOINT_DB is None and allow_in_memory_checkpoints=False, lifespan refuses startup."""
+    from fastapi import FastAPI
+
+    from agenticrag.api import lifespan
+    from agenticrag.config import Settings
+
+    settings = Settings(
+        environment="development",
+        api_key="valid-key",
+        checkpoint_db=None,
+        allow_in_memory_checkpoints=False,
+    )
+    monkeypatch.setattr(api_module, "get_settings", lambda: settings)
+
+    dummy_app = FastAPI()
+    with pytest.raises(RuntimeError, match="CHECKPOINT_DB must be set"):
+        import asyncio
+
+        async def run_lifespan():
+            async with lifespan(dummy_app):
+                pass
+
+        asyncio.run(run_lifespan())
+
+
+def test_health_check_includes_telemetry_and_status(client):
+    """Health check endpoint returns status, service, retriever_connected, and provider_failures."""
+    response = client.get("/health")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "ok"
+    assert "service" in data
+    assert "retriever_connected" in data
+    assert "provider_failures" in data
+    assert isinstance(data["provider_failures"], int)

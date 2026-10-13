@@ -48,18 +48,20 @@ def get_client_ip(request: Request) -> str:
 
 
 def get_client_rate_limit_key(request: Request) -> str:
-    """Extracts rate limit identifier: verified API key if valid, otherwise spoof-safe client IP."""
+    """Extracts rate limit identifier: verified API key scoped per client IP to prevent global exhaustion."""
+    client_ip = get_client_ip(request)
     api_key = request.headers.get("X-API-Key")
     configured_key = get_settings().api_key
-    # Only assign a dedicated API key rate bucket if the key is genuine and matches configured secret
+    # Only assign a dedicated API key rate bucket if the key is genuine and matches configured secret,
+    # scoped by client IP so that all users behind edge proxies don't share a single 20/min bucket.
     if (
         api_key
         and configured_key
         and hmac.compare_digest(api_key.encode("utf-8"), configured_key.encode("utf-8"))
     ):
-        return f"key:{api_key.strip()}"
+        return f"{client_ip}:key:{api_key.strip()}"
 
-    return get_client_ip(request)
+    return client_ip
 
 
 # Initialize rate limiter with proxy-aware key tracking
@@ -170,13 +172,16 @@ def get_current_agent():
 
 
 def clean_thread_id(raw_thread_id: str | None) -> str:
-    """Sanitizes thread_id and resolves whitespace bugs to avoid session collision."""
-    cleaned = (raw_thread_id or "").strip()
-    if not cleaned:
+    """Validates thread_id and generates uuid if empty. Rejects invalid characters with 422."""
+    if not raw_thread_id or not raw_thread_id.strip():
         return str(uuid.uuid4())
-    # Restrict to safe slug characters (alphanumeric, hyphens, underscores)
-    safe = re.sub(r"[^a-zA-Z0-9_\-]", "", cleaned)[:128]
-    return safe or str(uuid.uuid4())
+    cleaned = raw_thread_id.strip()
+    if not re.match(r"^[a-zA-Z0-9_\-]{1,128}$", cleaned):
+        raise HTTPException(
+            status_code=422,
+            detail="Invalid thread_id format. Must contain only alphanumeric characters, hyphens, and underscores (max 128 chars).",
+        )
+    return cleaned
 
 
 @app.get("/")
@@ -194,7 +199,16 @@ def root():
 @app.get("/health")
 def health_check():
     """Health status probe for monitoring and load balancers."""
-    return {"status": "ok", "service": "Agentic-RAG Backend"}
+    from agenticrag.metrics import get_provider_metrics
+
+    metrics = get_provider_metrics()
+    retriever_instance = get_retriever()
+    return {
+        "status": "ok",
+        "service": "Agentic-RAG Backend",
+        "retriever_connected": retriever_instance is not None,
+        "provider_failures": metrics["provider_failures"],
+    }
 
 
 @app.get("/kb/info")

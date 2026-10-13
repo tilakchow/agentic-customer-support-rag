@@ -5,8 +5,6 @@ from langgraph.graph import END, START, StateGraph
 from agenticrag.node_meta import NodeName
 from agenticrag.nodes import (
     answer_insufficient,
-    decide_after_kb_grade,
-    decide_after_web_grade,
     direct_answer,
     generate_from_kb,
     generate_from_web,
@@ -17,7 +15,11 @@ from agenticrag.nodes import (
     route_question,
     search_web,
 )
-from agenticrag.routing import route_after_router
+from agenticrag.routing import (
+    decide_after_kb_grade,
+    decide_after_web_grade,
+    route_after_router,
+)
 from agenticrag.state import AgentState
 
 

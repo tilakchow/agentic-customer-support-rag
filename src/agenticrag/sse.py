@@ -7,7 +7,11 @@ from typing import Any
 from langchain_core.messages import HumanMessage
 from starlette.requests import Request
 
-from agenticrag.node_meta import get_node_status_message, is_generation_node
+from agenticrag.node_meta import (
+    NodeName,
+    get_node_status_message,
+    is_generation_node,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -53,13 +57,13 @@ async def stream_agent_generator(
             # Check for node completion updates (e.g. retrieval failure notice)
             elif event_type == "on_chain_end":
                 node_name = event.get("metadata", {}).get("langgraph_node")
-                if node_name == "retrieve_kb":
+                if node_name == NodeName.RETRIEVE_KB.value:
                     output = event.get("data", {}).get("output", {})
                     if isinstance(output, dict) and output.get("kb_retrieval_failed"):
                         yield sse(
                             {
                                 "type": "status",
-                                "node": "retrieve_kb",
+                                "node": NodeName.RETRIEVE_KB.value,
                                 "message": "Knowledge base retrieval unavailable or failed...",
                             }
                         )

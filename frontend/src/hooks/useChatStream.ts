@@ -17,27 +17,29 @@ export function useChatStream(options?: UseChatStreamOptions) {
 
   const activeThreadIdRef = useRef<string | undefined>(options?.threadId)
   const isStreamingRef = useRef(false)
+  const abortControllerRef = useRef<AbortController | null>(null)
+
+  const abortStream = useCallback(() => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort()
+      abortControllerRef.current = null
+    }
+    isStreamingRef.current = false
+    setLoading(false)
+    setStatusMessage("")
+    setActiveNode(undefined)
+  }, [])
 
   // Abort in-flight stream if threadId changes
   useEffect(() => {
     if (options?.threadId && options.threadId !== activeThreadIdRef.current) {
       if (isStreamingRef.current) {
         console.warn(`Thread switched from ${activeThreadIdRef.current} to ${options.threadId}; aborting active stream.`)
-        isStreamingRef.current = false
-        setLoading(false)
-        setStatusMessage("")
-        setActiveNode(undefined)
+        abortStream()
       }
       activeThreadIdRef.current = options.threadId
     }
-  }, [options?.threadId])
-
-  const abortStream = useCallback(() => {
-    isStreamingRef.current = false
-    setLoading(false)
-    setStatusMessage("")
-    setActiveNode(undefined)
-  }, [])
+  }, [options?.threadId, abortStream])
 
   const startStream = useCallback(
     async (
@@ -45,10 +47,13 @@ export function useChatStream(options?: UseChatStreamOptions) {
       targetThreadId: string,
       callbacks: StreamCallbacks
     ) => {
-      // Ensure previous stream is stopped
+      // Ensure previous stream is cleanly stopped
       abortStream()
 
       const currentStreamThreadId = targetThreadId
+      const controller = new AbortController()
+      abortControllerRef.current = controller
+
       isStreamingRef.current = true
       setLoading(true)
       setErrorMsg(null)
@@ -64,7 +69,6 @@ export function useChatStream(options?: UseChatStreamOptions) {
           },
           {
             onStatus: (status, node) => {
-              // Ignore tokens/events if thread switched during fetch
               if (!isStreamingRef.current || activeThreadIdRef.current !== currentStreamThreadId) {
                 return
               }
@@ -86,10 +90,6 @@ export function useChatStream(options?: UseChatStreamOptions) {
               if (!isStreamingRef.current || activeThreadIdRef.current !== currentStreamThreadId) {
                 return
               }
-              setLoading(false)
-              setStatusMessage("")
-              setActiveNode(undefined)
-              isStreamingRef.current = false
               callbacks.onDone?.(data)
               options?.onComplete?.(data)
             },
@@ -97,26 +97,33 @@ export function useChatStream(options?: UseChatStreamOptions) {
               if (!isStreamingRef.current || activeThreadIdRef.current !== currentStreamThreadId) {
                 return
               }
-              setLoading(false)
               setErrorMsg(err)
-              setStatusMessage("")
-              setActiveNode(undefined)
-              isStreamingRef.current = false
               callbacks.onError?.(err)
               options?.onError?.(err)
             },
-          }
+          },
+          controller.signal
         )
       } catch (err: any) {
+        if (controller.signal.aborted) {
+          return // User initiated abort, do not surface as error
+        }
         if (isStreamingRef.current && activeThreadIdRef.current === currentStreamThreadId) {
           const message = err?.message || "Failed to communicate with agent service."
           setErrorMsg(message)
+          callbacks.onError?.(message)
+          options?.onError?.(message)
+        }
+      } finally {
+        // Guaranteed cleanup: loading must never stay stuck true
+        if (activeThreadIdRef.current === currentStreamThreadId) {
           setLoading(false)
           setStatusMessage("")
           setActiveNode(undefined)
           isStreamingRef.current = false
-          callbacks.onError?.(message)
-          options?.onError?.(message)
+          if (abortControllerRef.current === controller) {
+            abortControllerRef.current = null
+          }
         }
       }
     },

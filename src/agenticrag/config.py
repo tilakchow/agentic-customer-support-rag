@@ -47,7 +47,7 @@ class Settings(BaseSettings):
     max_message_length: int = 1500
     max_thread_history: int = 10
     web_fallback_enabled: bool = Field(default=True, validation_alias="WEB_FALLBACK_ENABLED")
-    skip_grader_score: float | None = Field(default=None, validation_alias="SKIP_GRADER_SCORE")
+    skip_grader_score: float | None = Field(default=0.85, validation_alias="SKIP_GRADER_SCORE")
     checkpoint_db: str | None = Field(default=None, validation_alias="CHECKPOINT_DB")
     allow_in_memory_checkpoints: bool | None = Field(
         default=None, validation_alias="ALLOW_IN_MEMORY_CHECKPOINTS"
