@@ -54,6 +54,8 @@ ENV PATH="/app/.venv/bin:$PATH"
 ENV FASTEMBED_CACHE_PATH=/app/.cache/fastembed
 ENV PYTHONUNBUFFERED=1
 ENV ENVIRONMENT=production
+ENV CHECKPOINT_DB=/app/checkpoints.sqlite
+ENV FORWARDED_ALLOW_IPS=*
 
 # Expose default port (Hugging Face Spaces default 7860)
 EXPOSE 7860
