@@ -32,29 +32,18 @@ export interface StreamCallbacks {
   onError?: (error: string) => void
 }
 
-// Public client configuration: Backend master keys must never be shipped in public browser bundles.
-// If backend auth is required in production, route client requests via an authenticated gateway/proxy.
-const API_BASE = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? "https://agentic-customer-support-rag.onrender.com" : "http://localhost:8000");
+// Client API configuration: Defaults to '/api' so all requests route through the
+// reverse-proxy / edge functions (injecting auth and preventing direct exposure).
+// If a custom backend or direct endpoint is explicitly desired, set VITE_API_URL.
+const API_BASE = (import.meta.env.VITE_API_URL || "/api").replace(/\/$/, "");
+const API_KEY = import.meta.env.VITE_API_KEY || "";
 
 function getHeaders(extraHeaders: Record<string, string> = {}): Record<string, string> {
-  return { ...extraHeaders };
-}
-
-export async function sendMessage(req: ChatRequest): Promise<ChatResponse> {
-  const response = await fetch(`${API_BASE}/chat`, {
-    method: "POST",
-    headers: getHeaders({
-      "Content-Type": "application/json",
-    }),
-    body: JSON.stringify(req),
-  })
-
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => null)
-    throw new Error(errorData?.detail || `API error: ${response.status} ${response.statusText}`)
+  const headers: Record<string, string> = { ...extraHeaders };
+  if (API_KEY) {
+    headers["X-API-Key"] = API_KEY;
   }
-
-  return response.json()
+  return headers;
 }
 
 export async function streamMessage(req: ChatRequest, callbacks: StreamCallbacks): Promise<void> {
@@ -119,7 +108,9 @@ export async function streamMessage(req: ChatRequest, callbacks: StreamCallbacks
 }
 
 export async function checkHealth(): Promise<HealthResponse> {
-  const response = await fetch(`${API_BASE}/health`)
+  const response = await fetch(`${API_BASE}/health`, {
+    headers: getHeaders(),
+  })
   if (!response.ok) {
     throw new Error(`Backend unavailable: ${response.status}`)
   }

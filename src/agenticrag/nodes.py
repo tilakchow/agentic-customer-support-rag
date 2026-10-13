@@ -212,7 +212,7 @@ async def search_web(state: AgentState) -> dict[str, Any]:
     query = state.get("current_query", "")
     logger.info("[Tavily Search] Query: %s", query)
     settings = get_settings()
-    timeout = settings.tavily_timeout_seconds or settings.tavily_timeout
+    timeout = settings.tavily_timeout
     sem = get_tavily_semaphore()
 
     try:

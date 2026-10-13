@@ -3,16 +3,8 @@
   "outputDirectory": "frontend/dist",
   "rewrites": [
     {
-      "source": "/api/chat",
-      "destination": "/frontend/api/chat"
-    },
-    {
       "source": "/api/chat/stream",
-      "destination": "/frontend/api/chat-stream"
-    },
-    {
-      "source": "/api/:path*",
-      "destination": "https://agentic-customer-support-rag.onrender.com/:path*"
+      "destination": "/api/chat-stream"
     }
   ]
 }

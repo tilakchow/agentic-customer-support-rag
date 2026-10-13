@@ -45,9 +45,9 @@ export class ErrorBoundary extends Component<Props, State> {
             <div className="space-y-2">
               <h2 className="text-xl font-bold text-slate-100">Something went wrong</h2>
               <p className="text-sm text-slate-400">
-                An unexpected error occurred while rendering the interface.
+                An unexpected error occurred while rendering the interface. Please try resetting your session or reloading.
               </p>
-              {this.state.error && (
+              {import.meta.env.DEV && this.state.error && (
                 <div className="mt-3 p-3 bg-slate-950 border border-slate-800 rounded-lg text-xs font-mono text-red-300 text-left overflow-auto max-h-32">
                   {this.state.error.message}
                 </div>

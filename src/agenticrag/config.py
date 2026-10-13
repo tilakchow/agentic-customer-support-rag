@@ -34,7 +34,6 @@ class Settings(BaseSettings):
     llm_timeout: float = Field(default=30.0, validation_alias="LLM_TIMEOUT")
     llm_max_retries: int = Field(default=2, validation_alias="LLM_MAX_RETRIES")
     tavily_timeout: float = Field(default=15.0, validation_alias="TAVILY_TIMEOUT")
-    tavily_timeout_seconds: float = Field(default=10.0, validation_alias="TAVILY_TIMEOUT_SECONDS")
 
     # Security & Policy Settings
     allowed_origins: Annotated[list[str], NoDecode] = [
@@ -78,8 +77,10 @@ class Settings(BaseSettings):
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
-    def validate_runtime_keys(self, strict: bool = False) -> None:
+    def validate_runtime_keys(self, strict: bool | None = None) -> None:
         """Validates that necessary API keys are present for execution."""
+        if strict is None:
+            strict = self.environment.lower() == "production"
         missing = []
         if not self.groq_api_key:
             missing.append("GROQ_API_KEY")

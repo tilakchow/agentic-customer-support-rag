@@ -21,6 +21,9 @@ export default defineConfig(({ mode }) => {
           target: backendTarget,
           changeOrigin: true,
           rewrite: (p) => p.replace(/^\/api/, ''),
+          headers: (env.VITE_API_KEY || env.API_KEY)
+            ? { 'X-API-Key': env.VITE_API_KEY || env.API_KEY }
+            : {},
         },
       },
     },
@@ -30,6 +33,9 @@ export default defineConfig(({ mode }) => {
           target: backendTarget,
           changeOrigin: true,
           rewrite: (p) => p.replace(/^\/api/, ''),
+          headers: (env.VITE_API_KEY || env.API_KEY)
+            ? { 'X-API-Key': env.VITE_API_KEY || env.API_KEY }
+            : {},
         },
       },
     },

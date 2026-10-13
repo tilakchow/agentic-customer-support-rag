@@ -96,11 +96,16 @@ def test_get_conversation_history_deduplication():
 
 
 def test_validate_runtime_keys_smoke():
-    from agenticrag.config import get_settings
+    from agenticrag.config import Settings
 
-    settings = get_settings()
-    # Non-strict validation logs warnings rather than raising
+    settings = Settings(
+        environment="development", groq_api_key="", tavily_api_key="", pinecone_api_key=""
+    )
+    # Non-strict validation safely completes without raising exception
     settings.validate_runtime_keys(strict=False)
+    assert settings.environment == "development"
+    assert settings.allow_in_memory_checkpoints is True
+    assert settings.rate_limit == "20/minute"
 
 
 def test_compiled_agent_smoke():

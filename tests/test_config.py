@@ -103,15 +103,22 @@ def test_settings_api_key_from_env(monkeypatch):
 
 
 def test_settings_validate_runtime_keys_warns_when_missing(caplog):
-    """validate_runtime_keys logs a warning when API keys are missing."""
+    """validate_runtime_keys logs a warning when API keys are missing in non-strict mode."""
     import logging
 
-    s = Settings()
+    s = Settings(groq_api_key="", tavily_api_key="", pinecone_api_key="")
     with caplog.at_level(logging.WARNING, logger="agenticrag.config"):
         s.validate_runtime_keys(strict=False)
-    # Missing keys should produce a warning (only if keys are actually missing)
-    # We just assert no exception is raised
-    assert True
+    assert any(
+        "Missing required environment variables" in record.message for record in caplog.records
+    )
+
+
+def test_settings_validate_runtime_keys_defaults_to_strict_in_production():
+    """validate_runtime_keys defaults strict=True when environment is production."""
+    s = Settings(environment="production", groq_api_key="", tavily_api_key="", pinecone_api_key="")
+    with pytest.raises(RuntimeError, match="Missing required environment variables"):
+        s.validate_runtime_keys()
 
 
 def test_settings_validate_runtime_keys_strict_raises():
@@ -148,9 +155,9 @@ def test_settings_max_thread_messages_from_env(monkeypatch):
 
 
 def test_settings_tavily_config_from_env(monkeypatch):
-    """TAVILY_TIMEOUT_SECONDS and TAVILY_MAX_CONCURRENCY parse correctly."""
-    monkeypatch.setenv("TAVILY_TIMEOUT_SECONDS", "25.0")
+    """TAVILY_TIMEOUT and TAVILY_MAX_CONCURRENCY parse correctly."""
+    monkeypatch.setenv("TAVILY_TIMEOUT", "25.0")
     monkeypatch.setenv("TAVILY_MAX_CONCURRENCY", "8")
     s = Settings()
-    assert s.tavily_timeout_seconds == 25.0
+    assert s.tavily_timeout == 25.0
     assert s.tavily_max_concurrency == 8

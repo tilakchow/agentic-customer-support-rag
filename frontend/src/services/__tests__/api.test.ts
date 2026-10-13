@@ -1,38 +1,25 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { sendMessage, streamMessage, checkHealth, fetchKBInfo, searchKB } from '../api'
+import { streamMessage, checkHealth, fetchKBInfo, searchKB } from '../api'
 
 describe('Frontend API Service', () => {
   beforeEach(() => {
     vi.restoreAllMocks()
   })
 
-  it('sendMessage sends POST request and parses json', async () => {
-    const mockResponse = { response: 'Hello world', thread_id: 'thread-1', source_used: 'direct' }
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockResolvedValue({
-        ok: true,
-        json: async () => mockResponse,
-      })
-    )
-
-    const res = await sendMessage({ message: 'Hi' })
-    expect(res).toEqual(mockResponse)
-    expect(fetch).toHaveBeenCalledTimes(1)
-  })
-
-  it('sendMessage throws on API error status', async () => {
+  it('streamMessage throws on API error status', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValue({
         ok: false,
-        status: 400,
-        statusText: 'Bad Request',
-        json: async () => ({ detail: 'Message cannot be empty' }),
+        status: 401,
+        statusText: 'Unauthorized',
+        json: async () => ({ detail: 'API Key missing or invalid' }),
       })
     )
 
-    await expect(sendMessage({ message: '   ' })).rejects.toThrow('Message cannot be empty')
+    await expect(
+      streamMessage({ message: 'Hi' }, {})
+    ).rejects.toThrow('API Key missing or invalid')
   })
 
   it('checkHealth calls /health and returns data', async () => {

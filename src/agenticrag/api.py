@@ -81,7 +81,7 @@ async def lifespan(app: FastAPI):
         logger.warning(
             "[SECURITY NOTICE] Running without API_KEY. All /chat endpoints are publicly accessible."
         )
-    settings.validate_runtime_keys(strict=False)
+    settings.validate_runtime_keys(strict=settings.environment.lower() == "production")
     if not settings.trusted_proxies:
         logger.warning(
             "[SECURITY NOTICE] TRUSTED_PROXIES is empty. Rate limiting ignores X-Forwarded-For headers to prevent spoofing."

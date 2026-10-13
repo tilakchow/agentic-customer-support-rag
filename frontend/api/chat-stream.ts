@@ -1,3 +1,5 @@
+/// <reference types="node" />
+
 export const config = {
   runtime: 'edge',
 }
@@ -16,7 +18,8 @@ export default async function handler(req: Request) {
 
   try {
     const body = await req.text()
-    const apiKey = process.env.API_KEY
+    const apiKey =
+      process.env.API_KEY || req.headers.get('x-api-key') || req.headers.get('X-API-Key')
 
     const response = await fetch(targetUrl, {
       method: 'POST',

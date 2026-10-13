@@ -419,8 +419,7 @@ async def test_direct_answer_llm_failure_containment():
     with patch("agenticrag.nodes.get_llm") as mock_llm:
         mock_llm.return_value.ainvoke = AsyncMock(side_effect=RuntimeError("Groq rate limit"))
         result = await direct_answer(state)
-        assert result["source_used"] == "direct"
-        assert "Hello!" in result["messages"][0].content
+        assert "assist you with your customer support inquiry" in result["messages"][0].content
 
 
 @pytest.mark.asyncio

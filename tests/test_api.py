@@ -325,6 +325,9 @@ def test_lifespan_refuses_in_memory_checkpointer_in_production(monkeypatch):
     prod_settings = Settings(
         environment="production",
         api_key="valid-key",
+        groq_api_key="mock-groq",
+        tavily_api_key="mock-tavily",
+        pinecone_api_key="mock-pinecone",
         checkpoint_db=None,
         allow_in_memory_checkpoints=False,
     )
@@ -354,6 +357,9 @@ def test_lifespan_allows_in_memory_checkpointer_with_flag(monkeypatch):
     prod_settings = Settings(
         environment="production",
         api_key="valid-key",
+        groq_api_key="mock-groq",
+        tavily_api_key="mock-tavily",
+        pinecone_api_key="mock-pinecone",
         checkpoint_db=None,
         allow_in_memory_checkpoints=True,
     )
@@ -367,3 +373,32 @@ def test_lifespan_allows_in_memory_checkpointer_with_flag(monkeypatch):
             assert hasattr(dummy_app.state, "agent_app")
 
     asyncio.run(run_lifespan())
+
+
+def test_lifespan_refuses_startup_in_production_when_runtime_keys_missing(monkeypatch):
+    """In production mode, missing runtime keys cause startup failure."""
+    from fastapi import FastAPI
+
+    from agenticrag.api import lifespan
+    from agenticrag.config import Settings
+
+    prod_settings = Settings(
+        environment="production",
+        api_key="valid-key",
+        groq_api_key="",
+        tavily_api_key="",
+        pinecone_api_key="",
+        checkpoint_db=None,
+        allow_in_memory_checkpoints=True,
+    )
+    monkeypatch.setattr(api_module, "get_settings", lambda: prod_settings)
+
+    dummy_app = FastAPI()
+    with pytest.raises(RuntimeError, match="Missing required environment variables"):
+        import asyncio
+
+        async def run_lifespan():
+            async with lifespan(dummy_app):
+                pass
+
+        asyncio.run(run_lifespan())

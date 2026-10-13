@@ -157,7 +157,18 @@ cp .env.example .env
 
 ---
 
-## 🚀 Deployment Options
+## 🚀 Deployment Options & Configuration
+
+### Supported Deployment Models & `VITE_API_URL` Reference
+
+| Deploy Target | `VITE_API_URL` Value | How Requests are Routed & Authenticated |
+| :--- | :--- | :--- |
+| **Model A: Unified Container (Docker)** | `/api` *(default)* | Client calls `/api/*`; served same-origin by Nginx / reverse proxy or container gateway. |
+| **Model B: Vercel + Cloud Backend** | `/api` *(default)* | Client calls `/api/*`; Vercel Edge functions (`/api/*`) proxy to `BACKEND_URL` and securely inject `API_KEY` server-side without exposing secrets in public browser bundles. |
+| **Model C: Local Development** | `/api` *(default)* | Client calls `/api/*`; Vite dev server proxy routes `/api/*` to `http://localhost:8000`. |
+| **Direct Browser-to-Backend** *(Optional)* | `https://your-backend.com` | Client calls backend directly; browser sends `X-API-Key` via `VITE_API_KEY`. Backend requires CORS configured for the frontend origin. |
+
+---
 
 ### Model A: Unified Container (Docker)
 Build and run the full backend in a single container (suitable for Hugging Face Spaces, Render, Fly.io, or GCP Cloud Run):
@@ -176,10 +187,13 @@ docker run -p 7860:7860 \
 ```
 
 ### Model B: Split Deployment (Vercel Frontend + Cloud Backend)
-1. **Backend**: Deploy FastAPI backend to Render / Fly.io / GCP with persistent disk for `CHECKPOINT_DB`.
-2. **Frontend on Vercel**: Deploy `frontend/` to Vercel:
-   - Configure `BACKEND_URL` in Vercel environment variables pointing to your backend URL.
-   - The included Vercel Edge functions (`frontend/api/chat.ts` and `frontend/api/chat-stream.ts`) automatically forward requests with unbuffered SSE chunked streaming and server-side API key injection.
+1. **Backend**: Deploy FastAPI backend to Render / Fly.io / GCP with persistent disk for `CHECKPOINT_DB` and set `REQUIRE_API_KEY=true` with a secret `API_KEY`.
+2. **Frontend on Vercel**:
+   - Deploy from repo root using the unified root `vercel.json`.
+   - Set environment variables in Vercel:
+     - `BACKEND_URL=https://your-fastapi-backend.com`
+     - `API_KEY=your_secret_api_key`
+   - The edge functions (`api/chat.ts`, `api/chat-stream.ts`, `api/health.ts`, `api/kb/info.ts`, `api/kb/search.ts`) proxy incoming UI calls to `BACKEND_URL` while injecting `X-API-Key` server-side.
 
 ### Model C: Local Development
 ```bash
