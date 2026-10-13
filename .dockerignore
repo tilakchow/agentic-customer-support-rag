@@ -5,3 +5,10 @@ __pycache__
 *.pyc
 frontend/
 .pytest_cache
+.mypy_cache
+.ruff_cache
+.coverage
+htmlcov/
+*.sqlite
+*.sqlite3
+*.log

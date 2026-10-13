@@ -17,11 +17,21 @@ node_modules/
 frontend/node_modules/
 frontend/dist/
 
-# Testing and coverage
+# Testing, cache, and coverage
 .coverage
 htmlcov/
 .pytest_cache/
 .mypy_cache/
+.ruff_cache/
 requirements.txt
 *.sqlite
 *.sqlite3
+*.log
+
+# IDE & OS artifacts
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
