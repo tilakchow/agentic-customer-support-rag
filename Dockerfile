@@ -53,7 +53,6 @@ USER appuser
 ENV PATH="/app/.venv/bin:$PATH"
 ENV FASTEMBED_CACHE_PATH=/app/.cache/fastembed
 ENV PYTHONUNBUFFERED=1
-ENV ENVIRONMENT=production
 ENV CHECKPOINT_DB=/app/checkpoints.sqlite
 ENV FORWARDED_ALLOW_IPS=*
 
