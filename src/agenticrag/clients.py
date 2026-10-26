@@ -81,9 +81,10 @@ def get_vectorstore():
         return None
     try:
         from langchain_pinecone import PineconeVectorStore
-        from pinecone import Pinecone
 
-        pc = Pinecone(api_key=settings.pinecone_api_key)
+        pc = get_pinecone_client()
+        if pc is None:
+            return None
         index = pc.Index(settings.index_name)
         _vectorstore_client = PineconeVectorStore(
             index=index, embedding=get_embeddings(), namespace=settings.namespace
@@ -95,6 +96,16 @@ def get_vectorstore():
         _last_retriever_failure_time = time.time()
         _vectorstore_client = None
         return None
+
+
+def get_pinecone_client():
+    """Lazily returns Pinecone client instance."""
+    settings = get_settings()
+    if not settings.pinecone_api_key:
+        return None
+    from pinecone import Pinecone
+
+    return Pinecone(api_key=settings.pinecone_api_key)
 
 
 def get_retriever():

@@ -57,6 +57,9 @@ class Settings(BaseSettings):
     kb_seed: int = Field(default=42, validation_alias="KB_SEED")
     tavily_max_concurrency: int = Field(default=5, validation_alias="TAVILY_MAX_CONCURRENCY")
     max_thread_messages: int = Field(default=40, validation_alias="MAX_THREAD_MESSAGES")
+    reranker_enabled: bool = Field(default=True, validation_alias="RERANKER_ENABLED")
+    rerank_model: str = Field(default="bge-reranker-v2-m3", validation_alias="RERANK_MODEL")
+    rerank_fetch_k: int = Field(default=20, validation_alias="RERANK_FETCH_K")
 
     trusted_proxies: Annotated[list[str], NoDecode] = Field(
         default_factory=list, validation_alias="TRUSTED_PROXIES"

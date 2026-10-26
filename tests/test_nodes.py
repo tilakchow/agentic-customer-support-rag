@@ -92,6 +92,69 @@ async def test_retrieve_kb_runs_in_worker_thread():
         assert caller_threads[0] != threading.main_thread()
 
 
+@pytest.mark.asyncio
+async def test_retrieve_kb_with_reranker_success():
+    """retrieve_kb calls Pinecone inference reranker and orders documents by rerank_score."""
+    state = {"current_query": "how to cancel order"}
+    docs = [
+        (Document(page_content="Unrelated doc", metadata={"id": "1"}), 0.8),
+        (Document(page_content="Cancel order instructions", metadata={"id": "2"}), 0.7),
+        (Document(page_content="Another doc", metadata={"id": "3"}), 0.6),
+        (Document(page_content="Fourth doc", metadata={"id": "4"}), 0.5),
+        (Document(page_content="Fifth doc", metadata={"id": "5"}), 0.4),
+    ]
+    mock_vs = MagicMock()
+    mock_vs.similarity_search_with_score.return_value = docs
+
+    mock_pc = MagicMock()
+    mock_item1 = MagicMock()
+    mock_item1.index = 1
+    mock_item1.score = 0.98
+    mock_item2 = MagicMock()
+    mock_item2.index = 0
+    mock_item2.score = 0.12
+    mock_rerank_res = MagicMock()
+    mock_rerank_res.data = [mock_item1, mock_item2]
+    mock_pc.inference.rerank.return_value = mock_rerank_res
+
+    with (
+        patch("agenticrag.nodes.get_vectorstore", return_value=mock_vs),
+        patch("agenticrag.nodes.get_pinecone_client", return_value=mock_pc),
+    ):
+        result = await retrieve_kb(state)
+        assert len(result["kb_docs"]) == 2
+        assert result["kb_docs"][0].page_content == "Cancel order instructions"
+        assert result["kb_docs"][0].metadata["rerank_score"] == 0.98
+        assert result["top_similarity_score"] == 0.98
+
+
+@pytest.mark.asyncio
+async def test_retrieve_kb_reranker_fallback_on_exception():
+    """Reranker exception gracefully falls back to initial vector similarity ordering."""
+    state = {"current_query": "cancel order"}
+    docs = [
+        (Document(page_content="Top vector match", metadata={"id": "1"}), 0.85),
+        (Document(page_content="Second match", metadata={"id": "2"}), 0.75),
+        (Document(page_content="Third match", metadata={"id": "3"}), 0.65),
+        (Document(page_content="Fourth match", metadata={"id": "4"}), 0.55),
+        (Document(page_content="Fifth match", metadata={"id": "5"}), 0.45),
+    ]
+    mock_vs = MagicMock()
+    mock_vs.similarity_search_with_score.return_value = docs
+
+    mock_pc = MagicMock()
+    mock_pc.inference.rerank.side_effect = RuntimeError("Pinecone Inference Rate Limit")
+
+    with (
+        patch("agenticrag.nodes.get_vectorstore", return_value=mock_vs),
+        patch("agenticrag.nodes.get_pinecone_client", return_value=mock_pc),
+    ):
+        result = await retrieve_kb(state)
+        assert len(result["kb_docs"]) == 4
+        assert result["kb_docs"][0].page_content == "Top vector match"
+        assert result["kb_docs"][0].metadata["score"] == 0.85
+
+
 def test_warm_up_clients_handles_missing_keys_gracefully():
     """warm_up_clients runs safely without throwing exceptions when keys are absent."""
     from agenticrag.clients import warm_up_clients

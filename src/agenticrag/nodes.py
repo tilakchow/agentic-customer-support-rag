@@ -10,6 +10,7 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from agenticrag.clients import (
     get_grader_llm,
     get_llm,
+    get_pinecone_client,
     get_retriever,
     get_router_llm,
     get_vectorstore,
@@ -105,18 +106,60 @@ async def retrieve_kb(state: AgentState) -> dict[str, Any]:
     if vectorstore:
         try:
             settings = get_settings()
+            fetch_k = settings.rerank_fetch_k if settings.reranker_enabled else RETRIEVER_K
             # Run blocking Pinecone network calls on a worker thread
             scored_results = await asyncio.to_thread(
                 vectorstore.similarity_search_with_score,
                 query,
-                k=RETRIEVER_K,
+                k=fetch_k,
                 namespace=settings.namespace,
             )
+            candidate_docs: list[Document] = []
             for doc, score in scored_results:
                 doc.metadata["score"] = float(score)
-                docs.append(doc)
-            if scored_results:
-                top_score = max(float(score) for _, score in scored_results)
+                candidate_docs.append(doc)
+
+            # Apply neural cross-encoder reranking if enabled and candidates exist
+            if settings.reranker_enabled and len(candidate_docs) > RETRIEVER_K:
+                try:
+                    pc = await asyncio.to_thread(get_pinecone_client)
+                    if pc and hasattr(pc, "inference"):
+                        doc_texts = [d.page_content for d in candidate_docs]
+                        rerank_res = await asyncio.to_thread(
+                            pc.inference.rerank,
+                            model=settings.rerank_model,
+                            query=query,
+                            documents=doc_texts,
+                            top_n=RETRIEVER_K,
+                        )
+                        reranked_docs: list[Document] = []
+                        for item in getattr(rerank_res, "data", []):
+                            idx = getattr(item, "index", 0)
+                            r_score = float(getattr(item, "score", 0.0))
+                            doc_match = candidate_docs[idx]
+                            doc_match.metadata["rerank_score"] = r_score
+                            reranked_docs.append(doc_match)
+                        if reranked_docs:
+                            docs = reranked_docs
+                            top_score = max(
+                                float(d.metadata.get("rerank_score", 0.0)) for d in docs
+                            )
+                    else:
+                        docs = candidate_docs[:RETRIEVER_K]
+                        if docs:
+                            top_score = max(float(d.metadata.get("score", 0.0)) for d in docs)
+                except Exception as rerank_err:
+                    logger.warning(
+                        "[KB Retriever Rerank Error]: %s. Falling back to vector similarity ranking.",
+                        rerank_err,
+                    )
+                    docs = candidate_docs[:RETRIEVER_K]
+                    if docs:
+                        top_score = max(float(d.metadata.get("score", 0.0)) for d in docs)
+            else:
+                docs = candidate_docs[:RETRIEVER_K]
+                if docs:
+                    top_score = max(float(d.metadata.get("score", 0.0)) for d in docs)
         except Exception as e:
             logger.error("[KB Retriever Error]: %s", e, exc_info=True)
             record_provider_failure(e)
