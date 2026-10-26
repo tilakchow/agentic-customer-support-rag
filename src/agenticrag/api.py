@@ -15,7 +15,7 @@ from starlette.middleware.cors import CORSMiddleware
 from agenticrag.auth import verify_api_key
 from agenticrag.clients import get_retriever, warm_up_clients
 from agenticrag.config import get_settings
-from agenticrag.constants import DATASET_NAME, EMBEDDING_DIM, KB_SAMPLE_SIZE, RETRIEVER_K
+from agenticrag.constants import DATASET_NAME, EMBEDDING_DIM, RETRIEVER_K
 from agenticrag.graph import create_agent
 from agenticrag.models import ChatRequest, ChatResponse, KBSearchRequest
 from agenticrag.sse import stream_agent_generator
@@ -222,7 +222,7 @@ def kb_info_endpoint(request: Request, _auth: str | None = Depends(verify_api_ke
         "namespace": settings.namespace,
         "embedding_model": settings.embedding_model,
         "dimension": EMBEDDING_DIM,
-        "sample_size": KB_SAMPLE_SIZE,
+        "sample_size": settings.kb_sample_size,
         "retriever_k": RETRIEVER_K,
         "dataset": DATASET_NAME,
         "retriever_connected": retriever_instance is not None,

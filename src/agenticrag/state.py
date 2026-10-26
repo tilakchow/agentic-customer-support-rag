@@ -1,11 +1,10 @@
 """Execution state schema passed across all LangGraph nodes."""
 
-from typing import Annotated, Any, cast
+from typing import Annotated, Any, TypedDict, cast
 
 from langchain_core.documents import Document
 from langchain_core.messages import AnyMessage
 from langgraph.graph.message import add_messages
-from typing_extensions import TypedDict
 
 from agenticrag.config import get_settings
 

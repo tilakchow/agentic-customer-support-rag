@@ -200,6 +200,22 @@ except ImportError:
     class TavilyClientError(Exception):  # type: ignore[no-redef]
         pass
 
+__all__ = [
+    "TavilyClientError",
+    "answer_insufficient",
+    "decide_after_kb_grade",
+    "decide_after_web_grade",
+    "direct_answer",
+    "generate_from_kb",
+    "generate_from_web",
+    "grade_kb_evidence",
+    "grade_web_evidence",
+    "retrieve_kb",
+    "rewrite_query",
+    "route_question",
+    "search_web",
+]
+
 
 _tavily_semaphore: asyncio.Semaphore | None = None
 
