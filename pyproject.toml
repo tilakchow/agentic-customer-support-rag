@@ -41,6 +41,7 @@ build-backend = "uv_build"
 dev = [
     "aiosqlite>=0.20.0",
     "datasets>=3.0.0,<6.0.0",
+    "deepeval>=2.9.3",
     "httpx>=0.28.1",
     "mypy>=1.10.0",
     "pip-audit>=2.10.1",
@@ -64,3 +65,10 @@ warn_unused_configs = true
 [[tool.mypy.overrides]]
 module = "datasets"
 ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+markers = [
+    "live: marks tests as requiring external live services or keys (deselect with '-m \"not live\"')",
+]
+addopts = "-m \"not live\""
+

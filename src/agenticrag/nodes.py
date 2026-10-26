@@ -200,6 +200,7 @@ except ImportError:
     class TavilyClientError(Exception):  # type: ignore[no-redef]
         pass
 
+
 __all__ = [
     "TavilyClientError",
     "answer_insufficient",

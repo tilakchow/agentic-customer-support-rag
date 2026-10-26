@@ -1,0 +1,100 @@
+{"id": "hp-016", "query": "how can i get my bill from {{Person Name}}", "expected_intent": "get_invoice", "type": "in_kb", "split": "dev"}
+{"id": "hp-045", "query": "what do I have to do to unsubscribe to your newsletter?", "expected_intent": "newsletter_subscription", "type": "in_kb", "split": "dev"}
+{"id": "hp-002", "query": "can I delete several articles from purchase {{Order Number}}?", "expected_intent": "change_order", "type": "in_kb", "split": "dev"}
+{"id": "hp-012", "query": "close {{Account Category}} account", "expected_intent": "delete_account", "type": "in_kb", "split": "dev"}
+{"id": "hp-037", "query": "I can't understand you, can you help me contact a person?", "expected_intent": "contact_human_agent", "type": "in_kb", "split": "dev"}
+{"id": "hp-097", "query": "i dont know what i have to do to download my bill #85632", "expected_intent": "get_invoice", "type": "in_kb", "split": "dev"}
+{"id": "hp-067", "query": "can i place an order frim {{Delivery Country}}", "expected_intent": "delivery_options", "type": "in_kb", "split": "dev"}
+{"id": "hp-084", "query": "I need assistance to modify my address", "expected_intent": "change_shipping_address", "type": "in_kb", "split": "test"}
+{"id": "hp-055", "query": "I want help cancelling purchase {{Order Number}}", "expected_intent": "cancel_order", "type": "in_kb", "split": "test"}
+{"id": "hp-044", "query": "how to request an reimbursement of money", "expected_intent": "get_refund", "type": "in_kb", "split": "test"}
+{"id": "hp-023", "query": "I have got to send my feedback about a product", "expected_intent": "review", "type": "in_kb", "split": "dev"}
+{"id": "hp-100", "query": "i have got toreport an issue with online payment", "expected_intent": "payment_issue", "type": "in_kb", "split": "dev"}
+{"id": "hp-013", "query": "i need help seeing the delivery methods", "expected_intent": "delivery_options", "type": "in_kb", "split": "dev"}
+{"id": "hp-096", "query": "i do not know what to do to update my damn user details", "expected_intent": "edit_account", "type": "in_kb", "split": "dev"}
+{"id": "hp-003", "query": "I entered a wrong delivery address, can you correct it?", "expected_intent": "change_shipping_address", "type": "in_kb", "split": "dev"}
+{"id": "hp-007", "query": "check how long reinbursements usually take", "expected_intent": "check_refund_policy", "type": "in_kb", "split": "dev"}
+{"id": "hp-020", "query": "I want to acquire several of your article", "expected_intent": "place_order", "type": "in_kb", "split": "dev"}
+{"id": "hp-056", "query": "can uhelp me to delete an item from purchase {{Order Number}}", "expected_intent": "change_order", "type": "in_kb", "split": "test"}
+{"id": "hp-031", "query": "seeing cancellation fees", "expected_intent": "check_cancellation_fee", "type": "in_kb", "split": "test"}
+{"id": "hp-050", "query": "is there an e-mail to send my feedback about a service?", "expected_intent": "review", "type": "in_kb", "split": "test"}
+{"id": "hp-043", "query": "get invoice from last purchase", "expected_intent": "get_invoice", "type": "in_kb", "split": "dev"}
+{"id": "hp-062", "query": "i do not know how to file a customer complaint", "expected_intent": "complaint", "type": "in_kb", "split": "dev"}
+{"id": "hp-076", "query": "I want help to inform of problems with a sign-up", "expected_intent": "registration_problems", "type": "in_kb", "split": "dev"}
+{"id": "hp-081", "query": "I want help seeing the restitution status", "expected_intent": "track_refund", "type": "in_kb", "split": "dev"}
+{"id": "hp-054", "query": "I have to see my refund current status, will you help me?", "expected_intent": "track_refund", "type": "in_kb", "split": "dev"}
+{"id": "hp-061", "query": "help seeing your money back  policy", "expected_intent": "check_refund_policy", "type": "in_kb", "split": "dev"}
+{"id": "hp-053", "query": "want help to check the eta of purchase {{Order Number}}", "expected_intent": "track_order", "type": "in_kb", "split": "dev"}
+{"id": "hp-099", "query": "wanna unsubscribe from the corporate newsletter", "expected_intent": "newsletter_subscription", "type": "in_kb", "split": "test"}
+{"id": "hp-014", "query": "I want to check how long the shipment taes, how can I do it?", "expected_intent": "delivery_period", "type": "in_kb", "split": "test"}
+{"id": "hp-046", "query": "where can i report issues with payment", "expected_intent": "payment_issue", "type": "in_kb", "split": "test"}
+{"id": "hp-068", "query": "I need to check how long the delivery takes", "expected_intent": "delivery_period", "type": "in_kb", "split": "dev"}
+{"id": "hp-091", "query": "i need assistance talking with an agent", "expected_intent": "contact_human_agent", "type": "in_kb", "split": "dev"}
+{"id": "hp-065", "query": "where to create a gold account", "expected_intent": "create_account", "type": "in_kb", "split": "dev"}
+{"id": "hp-047", "query": "need to purchase some of ur product", "expected_intent": "place_order", "type": "in_kb", "split": "dev"}
+{"id": "hp-001", "query": "cancel purchase  {{Order Number}}", "expected_intent": "cancel_order", "type": "in_kb", "split": "dev"}
+{"id": "hp-087", "query": "i need assistance to check the accepted payment modalities", "expected_intent": "check_payment_methods", "type": "in_kb", "split": "dev"}
+{"id": "hp-066", "query": "closing {{Account Type}} account", "expected_intent": "delete_account", "type": "in_kb", "split": "dev"}
+{"id": "hp-079", "query": "changkng to {{Account Type}} account", "expected_intent": "switch_account", "type": "in_kb", "split": "test"}
+{"id": "hp-040", "query": "i do not know how to check what shipment options uoffer", "expected_intent": "delivery_options", "type": "in_kb", "split": "test"}
+{"id": "hp-025", "query": "where can I change to the {{Account Type}} account?", "expected_intent": "switch_account", "type": "in_kb", "split": "test"}
+{"id": "hp-093", "query": "i dont use m platinum account i try to remove it", "expected_intent": "delete_account", "type": "in_kb", "split": "dev"}
+{"id": "hp-039", "query": "problem with {{Account Type}} account terminations", "expected_intent": "delete_account", "type": "in_kb", "split": "dev"}
+{"id": "hp-057", "query": "I do not know what I have to do to correct my address", "expected_intent": "change_shipping_address", "type": "in_kb", "split": "dev"}
+{"id": "hp-011", "query": "another premium account for father", "expected_intent": "create_account", "type": "in_kb", "split": "dev"}
+{"id": "hp-095", "query": "I have got to check how soon can I expect my package", "expected_intent": "delivery_period", "type": "in_kb", "split": "dev"}
+{"id": "hp-094", "query": "I have to see what shipping methods you offer, how to do it?", "expected_intent": "delivery_options", "type": "in_kb", "split": "dev"}
+{"id": "hp-080", "query": "where can i check purchase {{Order Number}} status", "expected_intent": "track_order", "type": "in_kb", "split": "dev"}
+{"id": "hp-004", "query": "I need help checking the withdrawal fee", "expected_intent": "check_cancellation_fee", "type": "in_kb", "split": "test"}
+{"id": "hp-006", "query": "I am trying to see the accepted payment methods", "expected_intent": "check_payment_methods", "type": "in_kb", "split": "test"}
+{"id": "hp-070", "query": "could i get the damn invoice from {{Person Name}}", "expected_intent": "get_invoice", "type": "in_kb", "split": "test"}
+{"id": "hp-033", "query": "can you help me seeing the accetped payment methods?", "expected_intent": "check_payment_methods", "type": "in_kb", "split": "dev"}
+{"id": "hp-074", "query": "I want assistance ordering an article", "expected_intent": "place_order", "type": "in_kb", "split": "dev"}
+{"id": "hp-015", "query": "changing information on pro account", "expected_intent": "edit_account", "type": "in_kb", "split": "dev"}
+{"id": "hp-024", "query": "I have got to submit my new shipping address", "expected_intent": "set_up_shipping_address", "type": "in_kb", "split": "dev"}
+{"id": "hp-026", "query": "help to see order {{Order Number}} status", "expected_intent": "track_order", "type": "in_kb", "split": "dev"}
+{"id": "hp-058", "query": "can you help me see the termination penalty?", "expected_intent": "check_cancellation_fee", "type": "in_kb", "split": "dev"}
+{"id": "hp-071", "query": "can you help me receiving rebates of money?", "expected_intent": "get_refund", "type": "in_kb", "split": "dev"}
+{"id": "hp-038", "query": "I have a problem with opening a {{Account Category}} account", "expected_intent": "create_account", "type": "in_kb", "split": "test"}
+{"id": "hp-063", "query": "will you tell me what hours I can call customer assistance?", "expected_intent": "contact_customer_service", "type": "in_kb", "split": "test"}
+{"id": "hp-017", "query": "how to request an reimbursement of money", "expected_intent": "get_refund", "type": "in_kb", "split": "test"}
+{"id": "hp-075", "query": "need to restore my user profile pass", "expected_intent": "recover_password", "type": "in_kb", "split": "dev"}
+{"id": "hp-036", "query": "i try to check at what time i can contact customer support", "expected_intent": "contact_customer_service", "type": "in_kb", "split": "dev"}
+{"id": "hp-048", "query": "question about my lost access key", "expected_intent": "recover_password", "type": "in_kb", "split": "dev"}
+{"id": "hp-089", "query": "I am unhappy with your work, how to make a customer claim?", "expected_intent": "complaint", "type": "in_kb", "split": "dev"}
+{"id": "hp-018", "query": "I don't know how to unsubscribe from the goddamn newsletter", "expected_intent": "newsletter_subscription", "type": "in_kb", "split": "dev"}
+{"id": "hp-034", "query": "want help to check in what situations can i ask for refunds", "expected_intent": "check_refund_policy", "type": "in_kb", "split": "dev"}
+{"id": "hp-019", "query": "how can I notify of an error with online payment?", "expected_intent": "payment_issue", "type": "in_kb", "split": "dev"}
+{"id": "hp-059", "query": "i dont kmow how i can locate bill #37777", "expected_intent": "check_invoice", "type": "in_kb", "split": "test"}
+{"id": "hp-051", "query": "I have got to set my shipping address up, how to do it?", "expected_intent": "set_up_shipping_address", "type": "in_kb", "split": "test"}
+{"id": "hp-064", "query": "want assistance chatting with a human agent", "expected_intent": "contact_human_agent", "type": "in_kb", "split": "test"}
+{"id": "hp-073", "query": "i want help to report a payment issue", "expected_intent": "payment_issue", "type": "in_kb", "split": "dev"}
+{"id": "hp-077", "query": "I need help sending some feedback about a  service", "expected_intent": "review", "type": "in_kb", "split": "dev"}
+{"id": "hp-028", "query": "help me cancel purchase {{Order Number}}", "expected_intent": "cancel_order", "type": "in_kb", "split": "dev"}
+{"id": "hp-009", "query": "I try to check what hours I can call customer support", "expected_intent": "contact_customer_service", "type": "in_kb", "split": "dev"}
+{"id": "hp-085", "query": "I need to check the cancellation penalties, can you help me?", "expected_intent": "check_cancellation_fee", "type": "in_kb", "split": "dev"}
+{"id": "hp-052", "query": "can I use the {{Account Category}} profile?", "expected_intent": "switch_account", "type": "in_kb", "split": "dev"}
+{"id": "hp-041", "query": "could you help me seeing how soon can I expect the product ?", "expected_intent": "delivery_period", "type": "in_kb", "split": "dev"}
+{"id": "hp-005", "query": "check invoices", "expected_intent": "check_invoice", "type": "in_kb", "split": "test"}
+{"id": "hp-030", "query": "my address has changed, I need help modifying it", "expected_intent": "change_shipping_address", "type": "in_kb", "split": "test"}
+{"id": "hp-008", "query": "need help filing a reclamation", "expected_intent": "complaint", "type": "in_kb", "split": "test"}
+{"id": "hp-042", "query": "I want to update the user data, how can I do it?", "expected_intent": "edit_account", "type": "in_kb", "split": "dev"}
+{"id": "hp-029", "query": "add something to order {{Order Number}}", "expected_intent": "change_order", "type": "in_kb", "split": "dev"}
+{"id": "hp-072", "query": "i need help to unsubscribe to the corporate newsletter", "expected_intent": "newsletter_subscription", "type": "in_kb", "split": "dev"}
+{"id": "hp-092", "query": "where to create a {{Account Type}} account?", "expected_intent": "create_account", "type": "in_kb", "split": "dev"}
+{"id": "hp-098", "query": "where do i  obtain a reimbursement", "expected_intent": "get_refund", "type": "in_kb", "split": "dev"}
+{"id": "hp-049", "query": "I need assistance reporting a registration issue", "expected_intent": "registration_problems", "type": "in_kb", "split": "dev"}
+{"id": "hp-060", "query": "where can I see the available payment modalities ?", "expected_intent": "check_payment_methods", "type": "in_kb", "split": "dev"}
+{"id": "hp-021", "query": "i have to reset the pin code of my profile", "expected_intent": "recover_password", "type": "in_kb", "split": "test"}
+{"id": "hp-032", "query": "show me the bill from {{Person Name}}", "expected_intent": "check_invoice", "type": "in_kb", "split": "test"}
+{"id": "hp-069", "query": "I need assistance modifying my bloody user account", "expected_intent": "edit_account", "type": "in_kb", "split": "test"}
+{"id": "hp-022", "query": "is it possible to notify of errors with a signup?", "expected_intent": "registration_problems", "type": "in_kb", "split": "dev"}
+{"id": "hp-082", "query": "have a question about canceling order {{Order Number}}", "expected_intent": "cancel_order", "type": "in_kb", "split": "dev"}
+{"id": "hp-078", "query": "can you help me enter my secondary shipping address?", "expected_intent": "set_up_shipping_address", "type": "in_kb", "split": "dev"}
+{"id": "hp-010", "query": "I don't know how I can talk to an assistant", "expected_intent": "contact_human_agent", "type": "in_kb", "split": "dev"}
+{"id": "hp-083", "query": "how do I add some articles to purchase {{Order Number}}?", "expected_intent": "change_order", "type": "in_kb", "split": "dev"}
+{"id": "hp-088", "query": "could you show me in which situations can I request refunds?", "expected_intent": "check_refund_policy", "type": "in_kb", "split": "dev"}
+{"id": "hp-090", "query": "I want to talk with fucking customer support, help me", "expected_intent": "contact_customer_service", "type": "in_kb", "split": "dev"}
+{"id": "hp-035", "query": "I do not know what I have to do to lodge a reclamation", "expected_intent": "complaint", "type": "in_kb", "split": "test"}
+{"id": "hp-086", "query": "I don't know what I have to do to look for invoice #00108", "expected_intent": "check_invoice", "type": "in_kb", "split": "test"}
+{"id": "hp-027", "query": "I am trying to check my compensation current status", "expected_intent": "track_refund", "type": "in_kb", "split": "test"}
