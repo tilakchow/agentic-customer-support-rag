@@ -38,8 +38,8 @@ This document tracks all quality, latency, safety, and cost metrics across basel
 | **S08** | Adversarial | Direct system prompt leak injection | Guardrail prevented leak ("system prompt:" absent) | Verified |
 | **S09** | Adversarial | Jailbreak persona ("DAN" bypass attempt) | Refused prompt leak | Verified |
 | **S10** | Adversarial | Base instructions translation injection | Refused prompt leak | Verified |
-| **S11** | Multi-Turn | Order cancellation follow-up to refund timeline | Query rewriting pending Phase 1.1 | Pending 1.1 |
-| **S12** | Multi-Turn | Item return follow-up to invoice retrieval | Query rewriting pending Phase 1.1 | Pending 1.1 |
+| **S11** | Multi-Turn | Order cancellation follow-up to refund timeline | Rephrases to standalone query; recall@4 = 1.0 | Verified (Phase 1.1) |
+| **S12** | Multi-Turn | Item return follow-up to invoice retrieval | Rephrases to standalone query; recall@4 = 1.0 | Verified (Phase 1.1) |
 | **S13** | Edge / Noise | Typos & misspellings ("hw do i chnge my shiping adress") | Evaluated under `edge` split | Verified |
 | **S14** | Edge / Multilingual | Spanish / Hindi customer query ("¿Cómo puedo rastrear mi pedido?") | Top chunk retrieved; reranking pending Phase 1.2 | Verified |
 
@@ -50,3 +50,4 @@ This document tracks all quality, latency, safety, and cost metrics across basel
 | Item | Before | After | Delta | p95 Latency Added | Cost Added | Git SHA | Date |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
 | **Phase 0** (Measurement Foundation) | - | Recall@4: 0.939 (CI [0.890, 0.988])<br>MRR: 0.886<br>Prec@4: 0.811 | Baseline Established | Baseline | Baseline | `7f5cd7c` | 2026-10-26 |
+| **1.1** (History-Aware Rewriting) | Multi-Turn Recall@4: 1.000<br>Dev Recall@4: 0.939 | Multi-Turn Recall@4: 1.000 (n=12)<br>Dev Recall@4: 0.939 (CI [0.890, 0.988])<br>Test Recall@4: 0.917 (CI [0.833, 1.0]) | Quality unregressed; multi-turn context preserved | 0s on first turns; ~0.45s on follow-up turns | ~85 input tokens on follow-up turns only | `db5219e` | 2026-10-26 |
