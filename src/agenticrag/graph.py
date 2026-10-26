@@ -5,6 +5,7 @@ from langgraph.graph import END, START, StateGraph
 from agenticrag.node_meta import NodeName
 from agenticrag.nodes import (
     answer_insufficient,
+    condense_query,
     direct_answer,
     generate_from_kb,
     generate_from_web,
@@ -34,6 +35,7 @@ def create_agent(checkpointer: Any = None):
 
     # Add Nodes using NodeName enum
     workflow.add_node(NodeName.ROUTE_QUESTION.value, route_question)
+    workflow.add_node(NodeName.CONDENSE_QUERY.value, condense_query)
     workflow.add_node(NodeName.RETRIEVE_KB.value, retrieve_kb)
     workflow.add_node(NodeName.GRADE_KB_EVIDENCE.value, grade_kb_evidence)
     workflow.add_node(NodeName.SEARCH_WEB.value, search_web)
@@ -51,11 +53,12 @@ def create_agent(checkpointer: Any = None):
         NodeName.ROUTE_QUESTION.value,
         route_after_router,
         {
-            NodeName.RETRIEVE_KB.value: NodeName.RETRIEVE_KB.value,
+            NodeName.CONDENSE_QUERY.value: NodeName.CONDENSE_QUERY.value,
             NodeName.DIRECT_ANSWER.value: NodeName.DIRECT_ANSWER.value,
         },
     )
 
+    workflow.add_edge(NodeName.CONDENSE_QUERY.value, NodeName.RETRIEVE_KB.value)
     workflow.add_edge(NodeName.RETRIEVE_KB.value, NodeName.GRADE_KB_EVIDENCE.value)
     workflow.add_conditional_edges(
         NodeName.GRADE_KB_EVIDENCE.value,

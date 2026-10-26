@@ -7,6 +7,7 @@ from langchain_core.messages import AIMessage, HumanMessage
 from agenticrag.clients import get_retriever
 from agenticrag.graph import create_agent
 from agenticrag.nodes import (
+    condense_query,
     decide_after_kb_grade,
     grade_kb_evidence,
     grade_web_evidence,
@@ -446,3 +447,70 @@ async def test_answer_insufficient_llm_failure_containment():
         result = await answer_insufficient(state)
         assert result["source_used"] == "insufficient_evidence"
         assert "Live Chat" in result["messages"][0].content
+
+
+@pytest.mark.asyncio
+async def test_condense_query_first_turn_skips_llm():
+    """First turn without assistant messages should skip LLM call and keep original question."""
+    state = {"messages": [HumanMessage(content="How long will delivery take?")]}
+    with patch("agenticrag.nodes.get_llm") as mock_llm:
+        result = await condense_query(state)
+        mock_llm.assert_not_called()
+        assert result["current_query"] == "How long will delivery take?"
+
+
+@pytest.mark.asyncio
+async def test_condense_query_multi_turn_calls_llm():
+    """Multi-turn conversation rephrases latest query into standalone search query."""
+    state = {
+        "messages": [
+            HumanMessage(content="I want to cancel order 98765"),
+            AIMessage(content="I can help you cancel order 98765."),
+            HumanMessage(content="How long will the refund take?"),
+        ]
+    }
+    with patch("agenticrag.nodes.get_llm") as mock_llm:
+        mock_llm.return_value.ainvoke = AsyncMock(
+            return_value=AIMessage(content="refund policy and processing time for order 98765")
+        )
+        result = await condense_query(state)
+        assert result["current_query"] == "refund policy and processing time for order 98765"
+
+
+@pytest.mark.asyncio
+async def test_condense_query_error_fallback():
+    """Exception in LLM condensation gracefully falls back to the original question."""
+    state = {
+        "messages": [
+            HumanMessage(content="Hello"),
+            AIMessage(content="Hi"),
+            HumanMessage(content="Help with invoice"),
+        ]
+    }
+    with patch("agenticrag.nodes.get_llm") as mock_llm:
+        mock_llm.return_value.ainvoke = AsyncMock(side_effect=RuntimeError("LLM unavailable"))
+        result = await condense_query(state)
+        assert result["current_query"] == "Help with invoice"
+
+
+@pytest.mark.asyncio
+async def test_rewrite_query_uses_current_query_and_history():
+    """Rewrite query reads current_query and incorporates history context into prompt."""
+    state = {
+        "messages": [
+            HumanMessage(content="My order 123 arrived damaged"),
+            AIMessage(content="I apologize. Would you like a refund or replacement?"),
+            HumanMessage(content="Replacement please"),
+        ],
+        "current_query": "replacement for damaged order 123",
+        "retry_count": 0,
+    }
+    with patch("agenticrag.nodes.get_llm") as mock_llm:
+        mock_llm.return_value.ainvoke = AsyncMock(
+            return_value=AIMessage(
+                content="how to request product replacement for damaged order 123"
+            )
+        )
+        result = await rewrite_query(state)
+        assert result["current_query"] == "how to request product replacement for damaged order 123"
+        assert result["retry_count"] == 1

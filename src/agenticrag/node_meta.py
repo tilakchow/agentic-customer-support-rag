@@ -8,6 +8,7 @@ class NodeName(StrEnum):
     """Enumeration of all node identifiers across the agent state graph."""
 
     ROUTE_QUESTION = "route_question"
+    CONDENSE_QUERY = "condense_query"
     RETRIEVE_KB = "retrieve_kb"
     GRADE_KB_EVIDENCE = "grade_kb_evidence"
     SEARCH_WEB = "search_web"
@@ -22,6 +23,10 @@ class NodeName(StrEnum):
 NODE_METADATA: dict[str, dict[str, Any]] = {
     NodeName.ROUTE_QUESTION.value: {
         "status_message": "Analyzing question & routing...",
+        "is_generation": False,
+    },
+    NodeName.CONDENSE_QUERY.value: {
+        "status_message": "Refining question with conversation context...",
         "is_generation": False,
     },
     NodeName.RETRIEVE_KB.value: {

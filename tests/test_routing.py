@@ -16,7 +16,7 @@ from agenticrag.routing import (
 
 def test_route_after_router_kb():
     state = {"route": "kb"}
-    assert route_after_router(state) == NodeName.RETRIEVE_KB.value
+    assert route_after_router(state) == NodeName.CONDENSE_QUERY.value
 
 
 def test_route_after_router_direct():

@@ -109,10 +109,28 @@ WEB_GRADER_HUMAN_TEMPLATE = """Question: {question}
 """
 
 
-REWRITE_QUERY_PROMPT_TEMPLATE = """Rewrite the question for better retrieval and web search.
-Original question: {question}
-Return only the rewritten query.
-"""
+CONDENSE_QUERY_PROMPT_TEMPLATE = """Given the conversation history and the latest user message, rephrase the latest message into a complete, standalone customer support search query that captures all relevant context (e.g. order numbers, referenced topics, specific items). Do NOT answer the question, only output the standalone search query.
+
+Recent Conversation History:
+{history}
+
+Latest Message:
+{question}
+
+Standalone Query:"""
+
+
+REWRITE_QUERY_PROMPT_TEMPLATE = """You are optimizing a search query for customer support knowledge retrieval.
+Given the previous search query and the recent conversation history, rewrite the query to improve retrieval precision and clarity.
+Do NOT answer the question. Return only the rewritten search query.
+
+Recent Conversation History:
+{history}
+
+Current Query:
+{current_query}
+
+Rewritten Query:"""
 
 
 KB_GENERATION_HUMAN_TEMPLATE = """<context>

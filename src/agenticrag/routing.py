@@ -81,10 +81,10 @@ def is_proprietary_policy_query(query: str) -> bool:
     return any(kw in q for kw in policy_keywords)
 
 
-def route_after_router(state: AgentState) -> Literal["retrieve_kb", "direct_answer"]:
-    """Conditional edge decision: routes to knowledge base retrieval or direct response."""
+def route_after_router(state: AgentState) -> Literal["condense_query", "direct_answer"]:
+    """Conditional edge decision: routes to query condensation (for KB) or direct response."""
     if state.get("route") == "kb":
-        return NodeName.RETRIEVE_KB.value
+        return NodeName.CONDENSE_QUERY.value
     return NodeName.DIRECT_ANSWER.value
 
 

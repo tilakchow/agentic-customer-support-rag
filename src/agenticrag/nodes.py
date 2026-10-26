@@ -19,6 +19,7 @@ from agenticrag.config import get_settings
 from agenticrag.constants import RETRIEVER_K
 from agenticrag.metrics import record_provider_failure
 from agenticrag.prompts import (
+    CONDENSE_QUERY_PROMPT_TEMPLATE,
     CUSTOMER_SUPPORT_SYSTEM_PROMPT,
     DIRECT_ANSWER_PROMPT_TEMPLATE,
     INSUFFICIENT_EVIDENCE_PROMPT_TEMPLATE,
@@ -204,6 +205,7 @@ except ImportError:
 __all__ = [
     "TavilyClientError",
     "answer_insufficient",
+    "condense_query",
     "decide_after_kb_grade",
     "decide_after_web_grade",
     "direct_answer",
@@ -320,20 +322,52 @@ def _message_text(response: Any) -> str:
     return response.content if hasattr(response, "content") else str(response)
 
 
-async def rewrite_query(state: AgentState) -> dict[str, Any]:
-    """Rewrites inquiry to optimize retrieval precision for subsequent searches."""
+async def condense_query(state: AgentState) -> dict[str, Any]:
+    """Condenses user query with conversation history into a standalone query.
+
+    Skipped on the first user turn (when no prior assistant messages exist).
+    """
+    messages = state.get("messages", [])
     question = get_latest_question(state)
+
+    # Count prior turns: if 0 or 1 user message and no prior assistant replies, skip LLM call
+    has_history = any(
+        isinstance(m, AIMessage) or (hasattr(m, "type") and m.type == "ai") for m in messages[:-1]
+    )
+    if not has_history:
+        logger.info("[Condense Query] First turn detected; skipping query condensation.")
+        return {"current_query": question}
+
+    history = get_conversation_history(state)
+    try:
+        prompt = CONDENSE_QUERY_PROMPT_TEMPLATE.format(history=history, question=question)
+        response = await get_llm().ainvoke(prompt)
+        condensed = _message_text(response).strip()
+        logger.info(
+            "[Condense Query] Original: '%s' -> Condensed: '%s'", question[:50], condensed[:50]
+        )
+        return {"current_query": condensed}
+    except Exception as e:
+        record_provider_failure(e)
+        logger.warning("[Condense Query Error] Failed to condense query. Keeping original: %s", e)
+        return {"current_query": question}
+
+
+async def rewrite_query(state: AgentState) -> dict[str, Any]:
+    """Rewrites current search query to optimize retrieval precision for subsequent searches."""
+    current_query = state.get("current_query") or get_latest_question(state)
+    history = get_conversation_history(state)
     retry_count = state.get("retry_count", 0) + 1
     try:
-        prompt = REWRITE_QUERY_PROMPT_TEMPLATE.format(question=question)
+        prompt = REWRITE_QUERY_PROMPT_TEMPLATE.format(history=history, current_query=current_query)
         response = await get_llm().ainvoke(prompt)
         rewritten = _message_text(response).strip()
         logger.info("[Rewriter] Rewritten query: '%s' (retry: %d)", rewritten, retry_count)
         return {"current_query": rewritten, "retry_count": retry_count}
     except Exception as e:
         record_provider_failure(e)
-        logger.warning("[Rewriter Error] Failed to rewrite query. Keeping original query: %s", e)
-        return {"current_query": question, "retry_count": retry_count}
+        logger.warning("[Rewriter Error] Failed to rewrite query. Keeping current query: %s", e)
+        return {"current_query": current_query, "retry_count": retry_count}
 
 
 DEFAULT_UNAVAILABLE_APOLOGY = "I apologize, but I am currently unable to complete your request due to a temporary service issue. Please try again shortly."
