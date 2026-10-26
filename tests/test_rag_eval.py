@@ -4,6 +4,7 @@ Measures routing precision, contact-number hallucination traps,
 proprietary policy traps, untrusted context boundary defense, and grader accuracy.
 """
 
+import pytest
 from langchain_core.documents import Document
 from langchain_core.messages import HumanMessage
 
@@ -126,22 +127,26 @@ def test_context_injection_boundary_sanitization():
         assert "</CONTEXT>" not in sanitized
 
 
-def test_high_similarity_score_skips_grader():
-    """High similarity score (>= 0.85) qualifies KB evidence directly without needing LLM invocation."""
+@pytest.mark.asyncio
+async def test_high_similarity_score_skips_grader():
+    """High similarity score (>= calibrated 0.45) qualifies KB evidence directly without invoking the LLM grader."""
+    from unittest.mock import patch
+
+    from agenticrag.nodes import grade_kb_evidence
+
     docs = [
         Document(
             page_content="Standard delivery takes 3 to 5 business days.",
-            metadata={"source": "shipping_faq", "score": 0.91},
+            metadata={"source": "shipping_faq", "score": 0.65},
         )
     ]
     state = {
         "messages": [HumanMessage(content="How long does standard delivery take?")],
         "kb_docs": docs,
-        "top_similarity_score": 0.91,
+        "top_similarity_score": 0.65,
     }
-    # When similarity >= 0.85, the pipeline qualifies evidence directly
-    from agenticrag.config import get_settings
 
-    settings = get_settings()
-    assert settings.skip_grader_score == 0.85
-    assert state["top_similarity_score"] >= settings.skip_grader_score
+    with patch("agenticrag.nodes.get_grader_llm") as mock_grader:
+        result = await grade_kb_evidence(state)
+        mock_grader.assert_not_called()
+        assert result["kb_grade"] == "good"
