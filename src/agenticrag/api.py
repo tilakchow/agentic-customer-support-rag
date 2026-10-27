@@ -320,6 +320,23 @@ async def chat_endpoint(
         thread_id=thread_id, tenant_id=user.tenant_id, user_id=user.user_id
     )
 
+    from agenticrag.cache import get_response_cache
+
+    cached = get_response_cache().get(
+        query=body.message,
+        tenant_id=user.tenant_id,
+        kb_version=get_settings().kb_version,
+    )
+    if cached:
+        logger.info("[Cache Hit] Returning cached response for thread_id=%s", thread_id)
+        return ChatResponse(
+            response=cached["response"],
+            thread_id=thread_id,
+            source_used="cached_kb",
+            ticket_payload=cached.get("ticket_payload"),
+            sources=cached.get("sources"),
+        )
+
     agent_app = get_current_agent()
     config = {"configurable": {"thread_id": thread_id}}
     try:
@@ -357,13 +374,28 @@ async def chat_endpoint(
             else None
         )
 
-        return ChatResponse(
+        chat_resp = ChatResponse(
             response=str(answer_content),
             thread_id=thread_id,
             source_used=source,
             ticket_payload=ticket_payload,
             sources=sources,
         )
+
+        if source in ("private_kb", "direct", "out_of_scope_refusal"):
+            get_response_cache().set(
+                query=body.message,
+                response_data={
+                    "response": chat_resp.response,
+                    "source_used": chat_resp.source_used,
+                    "sources": chat_resp.sources,
+                    "ticket_payload": chat_resp.ticket_payload,
+                },
+                tenant_id=user.tenant_id,
+                kb_version=get_settings().kb_version,
+            )
+
+        return chat_resp
 
     except HTTPException:
         raise
