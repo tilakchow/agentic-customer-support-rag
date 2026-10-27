@@ -273,9 +273,12 @@ async def chat_endpoint(
             raise HTTPException(status_code=500, detail="No response could be generated.")
 
         last_message = messages[-1]
-        answer_content = (
+        raw_content = (
             last_message.content if hasattr(last_message, "content") else str(last_message)
         )
+        from agenticrag.security import filter_canary_and_leaks
+
+        answer_content = filter_canary_and_leaks(str(raw_content))
         source = result.get("source_used", "unknown")
         ticket_payload = result.get("ticket_payload")
         kb_docs = result.get("kb_docs", [])

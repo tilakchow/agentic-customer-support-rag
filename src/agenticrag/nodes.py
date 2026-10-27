@@ -50,6 +50,7 @@ from agenticrag.routing import (
     is_policy_sensitive_request,
 )
 from agenticrag.schemas import ClaimSupportCheck, ScopeDecision
+from agenticrag.security import filter_canary_and_leaks, is_prompt_injection, redact_pii
 from agenticrag.state import AgentState
 
 logger = logging.getLogger(__name__)
@@ -63,18 +64,30 @@ async def classify_scope(state: AgentState) -> dict[str, Any]:
 
     Categorizes input into:
     - 'in_scope': Standard customer support queries (orders, account, returns, shipping, billing, chit-chat)
-    - 'out_of_scope': Programming/code, creative writing, general trivia, homework, non-support tasks
+    - 'out_of_scope': Programming/code, creative writing, general trivia, homework, non-support tasks, prompt injections
     - 'needs_human': Explicit human escalation requests or persistent complex complaints
     - 'policy_sensitive': Legal threats, litigation, regulatory filings
     """
     question = get_latest_question(state)
     history = get_conversation_history(state)
 
+    # Injection and adversarial prompt exfiltration check (M3)
+    is_inj, inj_reason = is_prompt_injection(question)
+    if is_inj:
+        logger.warning("[Security] Prompt injection blocked: %s", inj_reason)
+        return {
+            "scope": "out_of_scope",
+            "current_query": question,
+            "ticket_payload": None,
+            "escalated": False,
+        }
+
     # Fast heuristic checks for deterministic edge cases
     if is_human_escalation_request(question):
         logger.info(
-            "[Scope] Fast-track heuristic: human escalation requested for: %s", question[:50]
+            "[Scope] Fast-track heuristic: human escalation requested (len=%d)", len(question)
         )
+        logger.debug("[Scope] Query: %s", redact_pii(question))
         return {
             "scope": "needs_human",
             "current_query": question,
@@ -84,8 +97,10 @@ async def classify_scope(state: AgentState) -> dict[str, Any]:
 
     if is_policy_sensitive_request(question):
         logger.info(
-            "[Scope] Fast-track heuristic: policy sensitive inquiry detected: %s", question[:50]
+            "[Scope] Fast-track heuristic: policy sensitive inquiry detected (len=%d)",
+            len(question),
         )
+        logger.debug("[Scope] Query: %s", redact_pii(question))
         return {
             "scope": "policy_sensitive",
             "current_query": question,
@@ -113,8 +128,9 @@ async def classify_scope(state: AgentState) -> dict[str, Any]:
     ]
     if any(kw in q_lower for kw in obvious_oos):
         logger.info(
-            "[Scope] Fast-track heuristic: obvious out_of_scope detected: %s", question[:50]
+            "[Scope] Fast-track heuristic: obvious out_of_scope detected (len=%d)", len(question)
         )
+        logger.debug("[Scope] Query: %s", redact_pii(question))
         return {
             "scope": "out_of_scope",
             "current_query": question,
@@ -127,14 +143,14 @@ async def classify_scope(state: AgentState) -> dict[str, Any]:
         decision: ScopeDecision = await get_classifier_llm().ainvoke(prompt)
         scope = decision.scope
         logger.info(
-            "[Scope] Classification: %s (reason: %s) for query: %s",
+            "[Scope] Classification: %s (reason: %s, len=%d)",
             scope,
             decision.reason,
-            question[:50],
+            len(question),
         )
     except Exception as e:
         record_provider_failure(e)
-        logger.warning("[Scope Error] Classifier failed (%s): %s", question[:50], e)
+        logger.warning("[Scope Error] Classifier failed (query_len=%d): %s", len(question), e)
         # Fail-safe default: allow query to proceed to router
         scope = "in_scope"
 
@@ -147,10 +163,18 @@ async def classify_scope(state: AgentState) -> dict[str, Any]:
 
 
 async def refuse_out_of_scope(state: AgentState) -> dict[str, Any]:
-    """Politely refuses out-of-scope queries (e.g. coding, general trivia, poems) without calling external retrievers or web search."""
+    """Politely refuses out-of-scope queries (e.g. coding, general trivia, poems, injections) without calling external retrievers or web search."""
+    question = get_latest_question(state)
+    is_inj, _ = is_prompt_injection(question)
+    refusal = (
+        "I am an automated customer support assistant. I cannot follow instructions to override system rules or disclose internal instructions."
+        if is_inj
+        else OUT_OF_SCOPE_REFUSAL_MESSAGE
+    )
+    source = "prompt_injection_refusal" if is_inj else "out_of_scope_refusal"
     return {
-        "messages": [AIMessage(content=OUT_OF_SCOPE_REFUSAL_MESSAGE)],
-        "source_used": "out_of_scope_refusal",
+        "messages": [AIMessage(content=refusal)],
+        "source_used": source,
         "scope": "out_of_scope",
     }
 
@@ -167,8 +191,8 @@ async def escalate_to_human(state: AgentState) -> dict[str, Any]:
 
     ticket_payload = {
         "ticket_id": ticket_id,
-        "customer_query": question,
-        "summary": f"Customer support escalation: {question[:120]}",
+        "customer_query": redact_pii(question),
+        "summary": f"Customer support escalation: {redact_pii(question[:120])}",
         "reason": scope,
         "timestamp": now_iso,
         "status": "escalated",
@@ -194,11 +218,14 @@ async def route_question(state: AgentState) -> dict[str, Any]:
         prompt = ROUTER_PROMPT_TEMPLATE.format(history=history, question=question)
         decision = await get_router_llm().ainvoke(prompt)
         route = decision.route
-        logger.info("[Router] Decision: %s for query: %s", route, question[:50])
+        logger.info("[Router] Decision: %s (query_len=%d)", route, len(question))
+        logger.debug("[Router] Redacted query: %s", redact_pii(question))
     except Exception as e:
         record_provider_failure(e)
         logger.warning(
-            "[Router Error] Failed to route query (%s). Falling back to 'kb': %s", question[:50], e
+            "[Router Error] Failed to route query (query_len=%d). Falling back to 'kb': %s",
+            len(question),
+            e,
         )
         route = "kb"
 
@@ -249,12 +276,13 @@ async def retrieve_kb(state: AgentState) -> dict[str, Any]:
         top_score = 0.0
 
     logger.info(
-        "[KB Retriever] Retrieved: %d chunks for query: '%s' (top_score=%.4f, failed=%s)",
+        "[KB Retriever] Retrieved: %d chunks (top_score=%.4f, failed=%s, query_len=%d)",
         len(docs),
-        query[:50],
         top_score,
         kb_retrieval_failed,
+        len(query),
     )
+    logger.debug("[KB Retriever] Redacted query: %s", redact_pii(query))
     return {
         "kb_docs": docs,
         "kb_retrieval_failed": kb_retrieval_failed,
@@ -371,24 +399,24 @@ async def search_web(state: AgentState) -> dict[str, Any]:
             return {"web_results": web_text, "web_search_failed": False}
     except TimeoutError:
         logger.warning(
-            "[Tavily Search Timeout]: Web search query '%s' timed out after %.1fs",
-            query[:50],
+            "[Tavily Search Timeout]: Web search query timed out after %.1fs (query_len=%d)",
             timeout,
+            len(query),
         )
         return {"web_results": "", "web_search_failed": True}
     except TavilyClientError as e:
         record_provider_failure(e)
         logger.warning(
-            "[Tavily Search Error]: Search failed for query '%s': %s",
-            query[:50],
+            "[Tavily Search Error]: Search failed (query_len=%d): %s",
+            len(query),
             e,
         )
         return {"web_results": "", "web_search_failed": True}
     except Exception as e:
         record_provider_failure(e)
         logger.warning(
-            "[Tavily Search Error]: Unexpected failure for query '%s': %s",
-            query[:50],
+            "[Tavily Search Error]: Unexpected failure (query_len=%d): %s",
+            len(query),
             e,
         )
         return {"web_results": "", "web_search_failed": True}
@@ -455,8 +483,11 @@ async def condense_query(state: AgentState) -> dict[str, Any]:
         response = await get_llm().ainvoke(prompt)
         condensed = _message_text(response).strip()
         logger.info(
-            "[Condense Query] Original: '%s' -> Condensed: '%s'", question[:50], condensed[:50]
+            "[Condense Query] Original len=%d -> Condensed len=%d",
+            len(question),
+            len(condensed),
         )
+        logger.debug("[Condense Query] Condensed: %s", redact_pii(condensed))
         return {"current_query": condensed}
     except Exception as e:
         record_provider_failure(e)
@@ -473,7 +504,8 @@ async def rewrite_query(state: AgentState) -> dict[str, Any]:
         prompt = REWRITE_QUERY_PROMPT_TEMPLATE.format(history=history, current_query=current_query)
         response = await get_llm().ainvoke(prompt)
         rewritten = _message_text(response).strip()
-        logger.info("[Rewriter] Rewritten query: '%s' (retry: %d)", rewritten, retry_count)
+        logger.info("[Rewriter] Rewritten query (retry: %d, len=%d)", retry_count, len(rewritten))
+        logger.debug("[Rewriter] Rewritten: %s", redact_pii(rewritten))
         return {"current_query": rewritten, "retry_count": retry_count}
     except Exception as e:
         record_provider_failure(e)
@@ -491,6 +523,8 @@ async def _generate_support_message(
     try:
         response = await get_llm().ainvoke(prompt_or_messages)
         content = _message_text(response)
+        # Apply canary & leak filtering and PII redaction (M3)
+        content = filter_canary_and_leaks(str(content))
         meta = getattr(response, "response_metadata", {}) or {}
         usage = getattr(response, "usage_metadata", None)
         ai_msg = AIMessage(content=str(content), response_metadata=meta, usage_metadata=usage)

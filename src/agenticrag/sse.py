@@ -100,13 +100,16 @@ async def stream_agent_generator(
 
         messages = final_state.get("messages", [])
         last_content = messages[-1].content if messages else ""
+        from agenticrag.security import filter_canary_and_leaks
+
+        safe_content = filter_canary_and_leaks(str(last_content))
 
         yield sse(
             {
                 "type": "done",
                 "thread_id": thread_id,
                 "source_used": source,
-                "full_content": str(last_content),
+                "full_content": safe_content,
                 "ticket_payload": ticket_payload,
                 "sources": sources,
             }
