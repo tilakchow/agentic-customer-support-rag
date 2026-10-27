@@ -211,6 +211,26 @@ def health_check():
     }
 
 
+@app.get("/health/detailed")
+@limiter.limit("30/minute")
+def detailed_health_check(request: Request, _auth: str | None = Depends(verify_api_key)):
+    """Protected health and observability probe exposing per-provider telemetry and recent execution spans."""
+    from agenticrag.metrics import get_provider_metrics
+    from agenticrag.telemetry import get_telemetry_collector
+
+    metrics = get_provider_metrics()
+    telemetry = get_telemetry_collector().get_summary()
+    retriever_instance = get_retriever()
+
+    return {
+        "status": metrics["status"],
+        "service": "Agentic-RAG Backend",
+        "retriever_connected": retriever_instance is not None,
+        "provider_metrics": metrics,
+        "telemetry_summary": telemetry,
+    }
+
+
 @app.get("/kb/info")
 @limiter.limit("30/minute")
 def kb_info_endpoint(request: Request, _auth: str | None = Depends(verify_api_key)):

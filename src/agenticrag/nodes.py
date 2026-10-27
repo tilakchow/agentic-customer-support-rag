@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import time
 import uuid
 from datetime import UTC, datetime
 from typing import Any
@@ -52,6 +53,7 @@ from agenticrag.routing import (
 from agenticrag.schemas import ClaimSupportCheck, ScopeDecision
 from agenticrag.security import filter_canary_and_leaks, is_prompt_injection, redact_pii
 from agenticrag.state import AgentState
+from agenticrag.telemetry import get_telemetry_collector
 
 logger = logging.getLogger(__name__)
 
@@ -283,6 +285,19 @@ async def retrieve_kb(state: AgentState) -> dict[str, Any]:
         len(query),
     )
     logger.debug("[KB Retriever] Redacted query: %s", redact_pii(query))
+
+    try:
+        get_telemetry_collector().record_span(
+            node_name="retrieve_kb",
+            duration_ms=0.0,
+            start_dt=datetime.now(UTC),
+            end_dt=datetime.now(UTC),
+            fallback_triggered=kb_retrieval_failed,
+            status="error" if kb_retrieval_failed else "success",
+        )
+    except Exception as tel_err:
+        logger.debug("[Telemetry Non-fatal]: %s", tel_err)
+
     return {
         "kb_docs": docs,
         "kb_retrieval_failed": kb_retrieval_failed,
@@ -520,13 +535,42 @@ async def _generate_support_message(
     prompt_or_messages: Any, fallback_text: str, source_used: str
 ) -> dict[str, Any]:
     """Executes LLM synthesis with error containment and graceful customer fallback."""
+    t0 = time.perf_counter()
+    start_dt = datetime.now(UTC)
     try:
         response = await get_llm().ainvoke(prompt_or_messages)
+        duration_ms = (time.perf_counter() - t0) * 1000.0
+        end_dt = datetime.now(UTC)
         content = _message_text(response)
         # Apply canary & leak filtering and PII redaction (M3)
         content = filter_canary_and_leaks(str(content))
         meta = getattr(response, "response_metadata", {}) or {}
         usage = getattr(response, "usage_metadata", None)
+
+        in_tok = (
+            getattr(usage, "input_tokens", 0)
+            if usage
+            else (meta.get("token_usage", {}) or {}).get("prompt_tokens", 0)
+        )
+        out_tok = (
+            getattr(usage, "output_tokens", 0)
+            if usage
+            else (meta.get("token_usage", {}) or {}).get("completion_tokens", 0)
+        )
+
+        try:
+            get_telemetry_collector().record_span(
+                node_name=source_used,
+                duration_ms=duration_ms,
+                start_dt=start_dt,
+                end_dt=end_dt,
+                input_tokens=in_tok or 0,
+                output_tokens=out_tok or 0,
+                status="success",
+            )
+        except Exception as tel_err:
+            logger.debug("[Telemetry Non-fatal]: %s", tel_err)
+
         ai_msg = AIMessage(content=str(content), response_metadata=meta, usage_metadata=usage)
         return {"messages": [ai_msg], "source_used": source_used}
     except Exception as e:
