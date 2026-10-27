@@ -12,7 +12,13 @@ from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from starlette.middleware.cors import CORSMiddleware
 
-from agenticrag.auth import verify_api_key
+from agenticrag.auth import (
+    AuthenticatedUser,
+    get_authenticated_user,
+    get_tenancy_manager,
+    get_tenant_namespace,
+    verify_api_key,
+)
 from agenticrag.clients import get_retriever, warm_up_clients
 from agenticrag.config import get_settings
 from agenticrag.constants import DATASET_NAME, EMBEDDING_DIM, RETRIEVER_K
@@ -64,8 +70,13 @@ def get_client_rate_limit_key(request: Request) -> str:
     return client_ip
 
 
-# Initialize rate limiter with proxy-aware key tracking
-limiter = Limiter(key_func=get_client_rate_limit_key)
+# Initialize rate limiter with proxy-aware key tracking and optional Redis storage backend
+settings = get_settings()
+limiter = (
+    Limiter(key_func=get_client_rate_limit_key, storage_uri=settings.redis_url)
+    if settings.redis_url
+    else Limiter(key_func=get_client_rate_limit_key)
+)
 
 
 # --- Application Lifespan Handler ---
@@ -98,8 +109,23 @@ async def lifespan(app: FastAPI):
     await asyncio.to_thread(warm_up_clients)
 
     # Build the correct checkpointer and compile the agent graph ONCE at startup.
-    # The AsyncSqliteSaver connection is managed here and closed cleanly on shutdown.
-    if settings.checkpoint_db:
+    if settings.postgres_url:
+        try:
+            from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+
+            async with AsyncPostgresSaver.from_conn_string(
+                settings.postgres_url
+            ) as pg_checkpointer:
+                await pg_checkpointer.setup()
+                app.state.agent_app = create_agent(checkpointer=pg_checkpointer)
+                logger.info("Agentic-RAG startup complete (PostgreSQL checkpointer).")
+                yield
+                logger.info("Agentic-RAG shutdown complete (PostgreSQL).")
+        except Exception as pg_err:
+            logger.warning("[Postgres Checkpointer] Fallback due to: %s", pg_err)
+            app.state.agent_app = create_agent()
+            yield
+    elif settings.checkpoint_db:
         import aiosqlite
         from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
@@ -252,18 +278,24 @@ def kb_info_endpoint(request: Request, _auth: str | None = Depends(verify_api_ke
 @app.post("/kb/search")
 @limiter.limit("30/minute")
 def kb_search_endpoint(
-    request: Request, body: KBSearchRequest, _auth: str | None = Depends(verify_api_key)
+    request: Request,
+    body: KBSearchRequest,
+    _auth: str | None = Depends(verify_api_key),
+    user: AuthenticatedUser = Depends(get_authenticated_user),
 ):
-    """Direct vector search endpoint with rate limiting and authentication."""
+    """Direct vector search endpoint with tenant isolation, rate limiting, and authentication."""
     retriever_instance = get_retriever()
     if not retriever_instance:
         raise HTTPException(
             status_code=503, detail="Knowledge base retriever is temporarily unavailable."
         )
     try:
+        tenant_namespace = get_tenant_namespace(user.tenant_id)
         docs = retriever_instance.invoke(body.query)
         return {
             "query": body.query,
+            "tenant_id": user.tenant_id,
+            "namespace": tenant_namespace,
             "results": [{"content": doc.page_content, "metadata": doc.metadata} for doc in docs],
         }
     except Exception as e:
@@ -276,10 +308,17 @@ def kb_search_endpoint(
 @app.post("/chat", response_model=ChatResponse)
 @limiter.limit(lambda: get_settings().rate_limit)
 async def chat_endpoint(
-    request: Request, body: ChatRequest, _auth: str | None = Depends(verify_api_key)
+    request: Request,
+    body: ChatRequest,
+    _auth: str | None = Depends(verify_api_key),
+    user: AuthenticatedUser = Depends(get_authenticated_user),
 ):
-    """Chat endpoint returning direct JSON response."""
+    """Chat endpoint returning direct JSON response with tenant and thread isolation."""
     thread_id = clean_thread_id(body.thread_id)
+    # Enforce thread ownership and tenant isolation
+    get_tenancy_manager().verify_thread_access(
+        thread_id=thread_id, tenant_id=user.tenant_id, user_id=user.user_id
+    )
 
     agent_app = get_current_agent()
     config = {"configurable": {"thread_id": thread_id}}
@@ -339,10 +378,17 @@ async def chat_endpoint(
 @app.post("/chat/stream")
 @limiter.limit(lambda: get_settings().rate_limit)
 async def chat_stream_endpoint(
-    request: Request, body: ChatRequest, _auth: str | None = Depends(verify_api_key)
+    request: Request,
+    body: ChatRequest,
+    _auth: str | None = Depends(verify_api_key),
+    user: AuthenticatedUser = Depends(get_authenticated_user),
 ):
-    """Direct Server-Sent Events streaming endpoint with rate limits."""
+    """Direct Server-Sent Events streaming endpoint with rate limits and tenant isolation."""
     thread_id = clean_thread_id(body.thread_id)
+    # Enforce thread ownership and tenant isolation
+    get_tenancy_manager().verify_thread_access(
+        thread_id=thread_id, tenant_id=user.tenant_id, user_id=user.user_id
+    )
     return StreamingResponse(
         stream_agent_generator(
             body.message, thread_id, agent_app=get_current_agent(), request=request

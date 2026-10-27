@@ -60,6 +60,12 @@ class Settings(BaseSettings):
     reranker_enabled: bool = Field(default=True, validation_alias="RERANKER_ENABLED")
     rerank_model: str = Field(default="bge-reranker-v2-m3", validation_alias="RERANK_MODEL")
     rerank_fetch_k: int = Field(default=20, validation_alias="RERANK_FETCH_K")
+    kb_version: str = Field(default="v2.1.0", validation_alias="KB_VERSION")
+    jwt_secret: str = Field(
+        default="dev-jwt-secret-key-agentic-rag-2026", validation_alias="JWT_SECRET"
+    )
+    redis_url: str | None = Field(default=None, validation_alias="REDIS_URL")
+    postgres_url: str | None = Field(default=None, validation_alias="POSTGRES_URL")
 
     trusted_proxies: Annotated[list[str], NoDecode] = Field(
         default_factory=list, validation_alias="TRUSTED_PROXIES"
