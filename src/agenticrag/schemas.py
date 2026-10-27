@@ -60,3 +60,24 @@ class ScopeDecision(BaseModel):
                     data["scope"] = data[key]
                     break
         return data
+
+
+class ClaimSupportCheck(BaseModel):
+    supported: bool = Field(
+        default=True,
+        description="True if all claims made in the answer are supported by the provided context; False if there are fabricated or unsupported facts.",
+    )
+    reason: str = Field(default="", description="Explanation of claim support check.")
+    unsupported_claims: list[str] = Field(
+        default_factory=list, description="Specific unsupported or hallucinated statements."
+    )
+
+    @model_validator(mode="before")
+    @classmethod
+    def handle_support_aliases(cls, data):
+        if isinstance(data, dict) and "supported" not in data:
+            for key in ["grounded", "is_supported", "valid", "pass"]:
+                if key in data and isinstance(data[key], bool):
+                    data["supported"] = data[key]
+                    break
+        return data

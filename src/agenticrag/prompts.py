@@ -230,3 +230,26 @@ Instructions:
 2. Guide them to our official support channels: let them know they can reach assistance via Live Chat on our website or submit a support ticket.
 3. Keep the tone helpful, professional, and empathetic.
 """
+
+
+CLAIM_SUPPORT_PROMPT_TEMPLATE = """You are a strict faithfulness and claim-support evaluator for a customer support AI assistant.
+Your task is to determine if all factual claims made in the Assistant Response are directly supported by the Reference Context.
+
+Reference Context:
+{context}
+
+Customer Question:
+{question}
+
+Assistant Response:
+{response}
+
+Instructions:
+1. Identify every factual claim, number, policy rule, timeframe, and instruction in the Assistant Response.
+2. Verify if each claim is supported by the Reference Context.
+3. If the response introduces invented policies, unsupported fees, fake phone numbers, or ungrounded claims not in the context, set supported to false.
+4. If the response strictly sticks to the facts in the context (or acknowledges inability to answer), set supported to true.
+
+Return valid JSON:
+{{"supported": true | false, "reason": "<brief explanation>", "unsupported_claims": ["<list of any unsupported claims>"]}}
+"""

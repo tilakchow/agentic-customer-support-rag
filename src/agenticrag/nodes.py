@@ -11,6 +11,7 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
 from agenticrag.clients import (
     get_classifier_llm,
+    get_faithfulness_llm,
     get_grader_llm,
     get_llm,
     get_pinecone_client,
@@ -22,6 +23,7 @@ from agenticrag.config import get_settings
 from agenticrag.constants import RETRIEVER_K
 from agenticrag.metrics import record_provider_failure
 from agenticrag.prompts import (
+    CLAIM_SUPPORT_PROMPT_TEMPLATE,
     CONDENSE_QUERY_PROMPT_TEMPLATE,
     CUSTOMER_SUPPORT_SYSTEM_PROMPT,
     DIRECT_ANSWER_PROMPT_TEMPLATE,
@@ -47,7 +49,7 @@ from agenticrag.routing import (
     is_human_escalation_request,
     is_policy_sensitive_request,
 )
-from agenticrag.schemas import ScopeDecision
+from agenticrag.schemas import ClaimSupportCheck, ScopeDecision
 from agenticrag.state import AgentState
 
 logger = logging.getLogger(__name__)
@@ -504,13 +506,30 @@ async def _generate_support_message(
         return {"messages": [AIMessage(content=fallback_text)], "source_used": target_source}
 
 
+async def check_claim_support(question: str, context: str, response: str) -> ClaimSupportCheck:
+    """Evaluates whether all factual statements in the response are grounded in the reference context."""
+    if not context or not response:
+        return ClaimSupportCheck(supported=True, reason="Empty context or response.")
+    try:
+        prompt = CLAIM_SUPPORT_PROMPT_TEMPLATE.format(
+            context=context[:3000],
+            question=question,
+            response=response[:2000],
+        )
+        decision: ClaimSupportCheck = await get_faithfulness_llm().ainvoke(prompt)
+        return decision
+    except Exception as e:
+        logger.debug("[Faithfulness Evaluation Skipped/Error]: %s", e)
+        return ClaimSupportCheck(supported=True, reason=f"Evaluator error: {e}")
+
+
 async def generate_from_kb(state: AgentState) -> dict[str, Any]:
-    """Synthesizes customer response grounded in retrieved internal knowledge base documents."""
+    """Synthesizes customer response grounded in retrieved internal knowledge base documents with citations."""
     question = get_latest_question(state)
     history = get_conversation_history(state)
     raw_context = "\n\n".join(
-        f"[KB Source: {doc.metadata.get('source', 'unknown')}]\n{doc.page_content}"
-        for doc in state.get("kb_docs", [])
+        f"[Source {idx + 1}: {doc.metadata.get('intent', doc.metadata.get('source', 'unknown'))} (id: {doc.metadata.get('id', f'doc-{idx + 1}')})]\n{doc.page_content}"
+        for idx, doc in enumerate(state.get("kb_docs", []))
     )
     context = sanitize_untrusted_context(raw_context)
     system_text = CUSTOMER_SUPPORT_SYSTEM_PROMPT + UNTRUSTED_CONTEXT_INSTRUCTION
@@ -520,7 +539,33 @@ async def generate_from_kb(state: AgentState) -> dict[str, Any]:
         question=question,
     )
     messages = [SystemMessage(content=system_text), HumanMessage(content=human_text)]
-    return await _generate_support_message(messages, DEFAULT_UNAVAILABLE_APOLOGY, "private_kb")
+    result = await _generate_support_message(messages, DEFAULT_UNAVAILABLE_APOLOGY, "private_kb")
+
+    # Post-generation faithfulness guardrail (M2)
+    ai_msgs = result.get("messages", [])
+    if ai_msgs and context.strip():
+        ans_text = _message_text(ai_msgs[-1])
+        try:
+            check = await check_claim_support(question=question, context=context, response=ans_text)
+            if not check.supported:
+                logger.warning(
+                    "[Faithfulness Guardrail] Unsupported claims detected: %s (reason: %s)",
+                    check.unsupported_claims,
+                    check.reason,
+                )
+                guarded_text = (
+                    ans_text.strip()
+                    + "\n\n*Note: Please verify specific details with our official support team if your inquiry involves unusual account exceptions.*"
+                )
+                ai_msgs[-1] = AIMessage(
+                    content=guarded_text,
+                    response_metadata=getattr(ai_msgs[-1], "response_metadata", {}),
+                    usage_metadata=getattr(ai_msgs[-1], "usage_metadata", None),
+                )
+        except Exception as e:
+            logger.debug("[Faithfulness Post-Check Non-fatal]: %s", e)
+
+    return result
 
 
 async def generate_from_web(state: AgentState) -> dict[str, Any]:

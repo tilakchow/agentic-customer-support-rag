@@ -6,7 +6,7 @@ from functools import lru_cache
 
 from agenticrag.config import get_settings
 from agenticrag.constants import RETRIEVER_K
-from agenticrag.schemas import EvidenceGrade, RouteDecision, ScopeDecision
+from agenticrag.schemas import ClaimSupportCheck, EvidenceGrade, RouteDecision, ScopeDecision
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +44,11 @@ def get_router_llm():
 def get_grader_llm():
     """Provides ChatGroq configured with EvidenceGrade structured output for evidence grading."""
     return get_llm().with_structured_output(EvidenceGrade, method="json_mode")
+
+
+def get_faithfulness_llm():
+    """Provides ChatGroq configured with ClaimSupportCheck structured output for faithfulness verification."""
+    return get_llm().with_structured_output(ClaimSupportCheck, method="json_mode")
 
 
 @lru_cache(maxsize=1)
