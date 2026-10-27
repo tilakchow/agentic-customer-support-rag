@@ -8,7 +8,6 @@ from agenticrag.clients import get_retriever
 from agenticrag.graph import create_agent
 from agenticrag.nodes import (
     condense_query,
-    decide_after_kb_grade,
     grade_kb_evidence,
     grade_web_evidence,
     retrieve_kb,
@@ -16,6 +15,7 @@ from agenticrag.nodes import (
     route_question,
     search_web,
 )
+from agenticrag.routing import decide_after_kb_grade
 
 
 @pytest.mark.asyncio
@@ -34,13 +34,9 @@ async def test_route_question_fallback_on_exception():
 @pytest.mark.asyncio
 async def test_retrieve_kb_failure_sets_flag():
     state = {"current_query": "return policy"}
-    with (
-        patch("agenticrag.nodes.get_vectorstore", return_value=None),
-        patch("agenticrag.nodes.get_retriever") as mock_retriever,
+    with patch(
+        "agenticrag.nodes.get_vectorstore", side_effect=ConnectionError("Pinecone unreachable")
     ):
-        mock_client = MagicMock()
-        mock_client.invoke.side_effect = ConnectionError("Pinecone unreachable")
-        mock_retriever.return_value = mock_client
         result = await retrieve_kb(state)
         assert result["kb_retrieval_failed"] is True
         assert result["kb_docs"] == []
@@ -49,10 +45,7 @@ async def test_retrieve_kb_failure_sets_flag():
 @pytest.mark.asyncio
 async def test_retrieve_kb_none_retriever_sets_flag():
     state = {"current_query": "return policy"}
-    with (
-        patch("agenticrag.nodes.get_vectorstore", return_value=None),
-        patch("agenticrag.nodes.get_retriever", return_value=None),
-    ):
+    with patch("agenticrag.nodes.get_vectorstore", return_value=None):
         result = await retrieve_kb(state)
         assert result["kb_retrieval_failed"] is True
         assert result["kb_docs"] == []
@@ -281,7 +274,7 @@ async def test_search_web_concurrency_semaphore():
 
 def test_decide_after_kb_grade_web_fallback_disabled():
     state = {"kb_grade": "weak", "messages": [HumanMessage(content="What is the weather?")]}
-    with patch("agenticrag.nodes.get_settings") as mock_settings:
+    with patch("agenticrag.routing.get_settings") as mock_settings:
         mock_settings.return_value.web_fallback_enabled = False
         assert decide_after_kb_grade(state) == "answer_insufficient"
 

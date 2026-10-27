@@ -1,0 +1,195 @@
+{
+  "git_sha": "e2edf5d",
+  "timestamp": "2026-10-27T15:34:31Z",
+  "n_total": 12,
+  "paths": {
+    "kb": {
+      "n": 4,
+      "latency_p50_s": 3.131,
+      "latency_p95_s": 6.257,
+      "latency_mean_s": 3.438,
+      "prompt_tokens_p50": 1241,
+      "completion_tokens_p50": 207,
+      "total_tokens_p50": 1507,
+      "total_tokens_mean": 1334.8
+    },
+    "web": {
+      "n": 1,
+      "latency_p50_s": 37.822,
+      "latency_p95_s": 37.822,
+      "latency_mean_s": 37.822,
+      "prompt_tokens_p50": 1930,
+      "completion_tokens_p50": 49,
+      "total_tokens_p50": 1979,
+      "total_tokens_mean": 1979.0
+    },
+    "direct": {
+      "n": 7,
+      "latency_p50_s": 2.506,
+      "latency_p95_s": 9.462,
+      "latency_mean_s": 4.11,
+      "prompt_tokens_p50": 520,
+      "completion_tokens_p50": 63,
+      "total_tokens_p50": 583,
+      "total_tokens_mean": 590.0
+    }
+  },
+  "overall": {
+    "n": 12,
+    "latency_p50_s": 3.131,
+    "latency_p95_s": 37.822,
+    "total_tokens_mean": 954.0
+  },
+  "records": {
+    "kb": [
+      {
+        "query": "can I cancel my order? #12345",
+        "target_path": "kb",
+        "actual_path": "kb",
+        "source_used": "private_kb",
+        "latency_s": 6.257,
+        "tokens": {
+          "prompt_tokens": 1313,
+          "completion_tokens": 207,
+          "total_tokens": 1520
+        }
+      },
+      {
+        "query": "how can i get my bill from Company?",
+        "target_path": "kb",
+        "actual_path": "kb",
+        "source_used": "private_kb",
+        "latency_s": 3.131,
+        "tokens": {
+          "prompt_tokens": 1241,
+          "completion_tokens": 266,
+          "total_tokens": 1507
+        }
+      },
+      {
+        "query": "what do I have to do to unsubscribe to your newsletter?",
+        "target_path": "kb",
+        "actual_path": "kb",
+        "source_used": "private_kb",
+        "latency_s": 1.802,
+        "tokens": {
+          "prompt_tokens": 1100,
+          "completion_tokens": 119,
+          "total_tokens": 1219
+        }
+      },
+      {
+        "query": "I entered a wrong delivery address, can you correct it?",
+        "target_path": "kb",
+        "actual_path": "kb",
+        "source_used": "private_kb",
+        "latency_s": 2.564,
+        "tokens": {
+          "prompt_tokens": 954,
+          "completion_tokens": 139,
+          "total_tokens": 1093
+        }
+      }
+    ],
+    "web": [
+      {
+        "query": "What is the capital city of Australia?",
+        "target_path": "web",
+        "actual_path": "web",
+        "source_used": "web_search",
+        "latency_s": 37.822,
+        "tokens": {
+          "prompt_tokens": 1930,
+          "completion_tokens": 49,
+          "total_tokens": 1979
+        }
+      }
+    ],
+    "direct": [
+      {
+        "query": "Hello! Can you help me today?",
+        "target_path": "direct",
+        "actual_path": "direct",
+        "source_used": "direct",
+        "latency_s": 0.937,
+        "tokens": {
+          "prompt_tokens": 518,
+          "completion_tokens": 56,
+          "total_tokens": 574
+        }
+      },
+      {
+        "query": "Good morning! Who are you?",
+        "target_path": "direct",
+        "actual_path": "direct",
+        "source_used": "direct",
+        "latency_s": 2.506,
+        "tokens": {
+          "prompt_tokens": 517,
+          "completion_tokens": 81,
+          "total_tokens": 598
+        }
+      },
+      {
+        "query": "Thank you so much, that answers my question!",
+        "target_path": "direct",
+        "actual_path": "direct",
+        "source_used": "direct",
+        "latency_s": 1.094,
+        "tokens": {
+          "prompt_tokens": 520,
+          "completion_tokens": 106,
+          "total_tokens": 626
+        }
+      },
+      {
+        "query": "Hi there! I just wanted to say hello.",
+        "target_path": "direct",
+        "actual_path": "direct",
+        "source_used": "direct",
+        "latency_s": 2.005,
+        "tokens": {
+          "prompt_tokens": 520,
+          "completion_tokens": 63,
+          "total_tokens": 583
+        }
+      },
+      {
+        "query": "Who won the FIFA Men's World Cup in 2022?",
+        "target_path": "web",
+        "actual_path": "direct",
+        "source_used": "direct",
+        "latency_s": 6.28,
+        "tokens": {
+          "prompt_tokens": 522,
+          "completion_tokens": 49,
+          "total_tokens": 571
+        }
+      },
+      {
+        "query": "What is the distance between the Earth and the Moon in kilometers?",
+        "target_path": "web",
+        "actual_path": "direct",
+        "source_used": "direct",
+        "latency_s": 6.486,
+        "tokens": {
+          "prompt_tokens": 523,
+          "completion_tokens": 89,
+          "total_tokens": 612
+        }
+      },
+      {
+        "query": "Who wrote the play Romeo and Juliet?",
+        "target_path": "web",
+        "actual_path": "direct",
+        "source_used": "direct",
+        "latency_s": 9.462,
+        "tokens": {
+          "prompt_tokens": 518,
+          "completion_tokens": 48,
+          "total_tokens": 566
+        }
+      }
+    ]
+  }
+}

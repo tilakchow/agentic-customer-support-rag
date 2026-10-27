@@ -25,7 +25,7 @@ class Settings(BaseSettings):
     environment: str = Field(default="development", validation_alias="ENVIRONMENT")
 
     index_name: str = Field(default="industry-agentic-rag-kb", validation_alias="INDEX_NAME")
-    namespace: str = Field(default="bitext-support", validation_alias="NAMESPACE")
+    namespace: str = Field(default="bitext-support-v2", validation_alias="NAMESPACE")
     embedding_model: str = Field(
         default="sentence-transformers/all-MiniLM-L6-v2", validation_alias="EMBEDDING_MODEL"
     )

@@ -2,7 +2,7 @@
 
 import asyncio
 import logging
-from typing import Any, Literal
+from typing import Any
 
 from langchain_core.documents import Document
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
@@ -11,7 +11,6 @@ from agenticrag.clients import (
     get_grader_llm,
     get_llm,
     get_pinecone_client,
-    get_retriever,
     get_router_llm,
     get_vectorstore,
     get_web_search,
@@ -35,12 +34,7 @@ from agenticrag.prompts import (
     WEB_GRADER_SYSTEM_PROMPT,
     sanitize_untrusted_context,
 )
-from agenticrag.routing import (
-    decide_after_kb_grade as _routing_decide_after_kb_grade,
-)
-from agenticrag.routing import (
-    decide_after_web_grade as _routing_decide_after_web_grade,
-)
+from agenticrag.retrieval import retrieve_kb as retrieve_kb_documents
 from agenticrag.routing import (
     get_conversation_history,
     get_latest_question,
@@ -48,20 +42,6 @@ from agenticrag.routing import (
 from agenticrag.state import AgentState
 
 logger = logging.getLogger(__name__)
-
-
-def decide_after_kb_grade(
-    state: AgentState,
-) -> Literal["generate_from_kb", "search_web", "answer_insufficient"]:
-    """Conditional edge decision: delegates to routing logic using local settings."""
-    return _routing_decide_after_kb_grade(state, settings=get_settings())
-
-
-def decide_after_web_grade(
-    state: AgentState,
-) -> Literal["generate_from_web", "rewrite_query", "answer_insufficient"]:
-    """Conditional edge decision: delegates to routing logic using local settings."""
-    return _routing_decide_after_web_grade(state, settings=get_settings())
 
 
 # --- Async Graph Execution Nodes ---
@@ -97,86 +77,38 @@ async def route_question(state: AgentState) -> dict[str, Any]:
 async def retrieve_kb(state: AgentState) -> dict[str, Any]:
     """Queries Pinecone vector store using the current search query with similarity scores."""
     query = state.get("current_query", "")
-    vectorstore = await asyncio.to_thread(get_vectorstore)
-    retriever_client = await asyncio.to_thread(get_retriever)
     kb_retrieval_failed = False
     docs: list[Document] = []
     top_score = 0.0
 
-    if vectorstore:
-        try:
-            settings = get_settings()
-            fetch_k = settings.rerank_fetch_k if settings.reranker_enabled else RETRIEVER_K
-            # Run blocking Pinecone network calls on a worker thread
-            scored_results = await asyncio.to_thread(
-                vectorstore.similarity_search_with_score,
-                query,
-                k=fetch_k,
-                namespace=settings.namespace,
-            )
-            candidate_docs: list[Document] = []
-            for doc, score in scored_results:
-                doc.metadata["score"] = float(score)
-                candidate_docs.append(doc)
+    try:
+        settings = get_settings()
+        vectorstore = await asyncio.to_thread(get_vectorstore)
+        if vectorstore is None:
+            logger.error("[KB Retriever Error]: Pinecone vector store is unavailable.")
+            return {
+                "kb_docs": [],
+                "kb_retrieval_failed": True,
+                "top_similarity_score": 0.0,
+            }
 
-            # Apply neural cross-encoder reranking if enabled and candidates exist
-            if settings.reranker_enabled and len(candidate_docs) > RETRIEVER_K:
-                try:
-                    pc = await asyncio.to_thread(get_pinecone_client)
-                    if pc and hasattr(pc, "inference"):
-                        doc_texts = [d.page_content for d in candidate_docs]
-                        rerank_res = await asyncio.to_thread(
-                            pc.inference.rerank,
-                            model=settings.rerank_model,
-                            query=query,
-                            documents=doc_texts,
-                            top_n=RETRIEVER_K,
-                        )
-                        reranked_docs: list[Document] = []
-                        for item in getattr(rerank_res, "data", []):
-                            idx = getattr(item, "index", 0)
-                            r_score = float(getattr(item, "score", 0.0))
-                            doc_match = candidate_docs[idx]
-                            doc_match.metadata["rerank_score"] = r_score
-                            reranked_docs.append(doc_match)
-                        if reranked_docs:
-                            docs = reranked_docs
-                            top_score = max(
-                                float(d.metadata.get("rerank_score", 0.0)) for d in docs
-                            )
-                    else:
-                        docs = candidate_docs[:RETRIEVER_K]
-                        if docs:
-                            top_score = max(float(d.metadata.get("score", 0.0)) for d in docs)
-                except Exception as rerank_err:
-                    logger.warning(
-                        "[KB Retriever Rerank Error]: %s. Falling back to vector similarity ranking.",
-                        rerank_err,
-                    )
-                    docs = candidate_docs[:RETRIEVER_K]
-                    if docs:
-                        top_score = max(float(d.metadata.get("score", 0.0)) for d in docs)
-            else:
-                docs = candidate_docs[:RETRIEVER_K]
-                if docs:
-                    top_score = max(float(d.metadata.get("score", 0.0)) for d in docs)
-        except Exception as e:
-            logger.error("[KB Retriever Error]: %s", e, exc_info=True)
-            record_provider_failure(e)
-            kb_retrieval_failed = True
-            docs = []
-    elif retriever_client:
-        try:
-            docs = await asyncio.to_thread(retriever_client.invoke, query)
-        except Exception as e:
-            logger.error("[KB Retriever Error]: %s", e, exc_info=True)
-            record_provider_failure(e)
-            kb_retrieval_failed = True
-            docs = []
-    else:
-        logger.error("[KB Retriever Error]: Pinecone retriever client is unavailable.")
+        pc = await asyncio.to_thread(get_pinecone_client) if settings.reranker_enabled else None
+        res = await asyncio.to_thread(
+            retrieve_kb_documents,
+            query=query,
+            k=RETRIEVER_K,
+            vectorstore=vectorstore,
+            settings=settings,
+            pinecone_client=pc,
+        )
+        docs = res.docs
+        top_score = res.top_score
+    except Exception as e:
+        logger.error("[KB Retriever Error]: %s", e, exc_info=True)
+        record_provider_failure(e)
         kb_retrieval_failed = True
         docs = []
+        top_score = 0.0
 
     logger.info(
         "[KB Retriever] Retrieved: %d chunks for query: '%s' (top_score=%.4f, failed=%s)",
@@ -249,8 +181,6 @@ __all__ = [
     "TavilyClientError",
     "answer_insufficient",
     "condense_query",
-    "decide_after_kb_grade",
-    "decide_after_web_grade",
     "direct_answer",
     "generate_from_kb",
     "generate_from_web",
@@ -423,7 +353,10 @@ async def _generate_support_message(
     try:
         response = await get_llm().ainvoke(prompt_or_messages)
         content = _message_text(response)
-        return {"messages": [AIMessage(content=str(content))], "source_used": source_used}
+        meta = getattr(response, "response_metadata", {}) or {}
+        usage = getattr(response, "usage_metadata", None)
+        ai_msg = AIMessage(content=str(content), response_metadata=meta, usage_metadata=usage)
+        return {"messages": [ai_msg], "source_used": source_used}
     except Exception as e:
         record_provider_failure(e)
         logger.error("[%s Error] LLM generation failed: %s", source_used, e, exc_info=True)

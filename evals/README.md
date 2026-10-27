@@ -7,13 +7,16 @@ This directory contains evaluation datasets, baseline benchmarks, and evaluation
 ## 1. Directory Structure
 
 - `build_golden.py`: Script generating candidate golden test cases from Bitext dataset rows that are held out from the ingestion sample.
-- `check_intents.py`: Validates that every non-null `expected_intent` in the golden dataset is present in the Pinecone vectorstore.
-- `debug_retrieval.py`: Quick diagnostic script to inspect retriever similarity scores across sample queries.
-- `retrieval_eval.py`: Quantitative retrieval evaluation script reporting mean, bootstrap 95% confidence intervals, and n for `recall@4`, `precision@4`, and `MRR`, as well as p10/p90 top-score percentiles.
+- `tools/check_intents.py`: Validates that every non-null `expected_intent` in the golden dataset is present in the Pinecone vectorstore.
+- `tools/debug_retrieval.py`: Quick diagnostic script to inspect retriever similarity scores across sample queries.
+- `retrieval_eval.py`: Quantitative retrieval evaluation script reporting mean, bootstrap 95% confidence intervals, and n for `recall@4`, `precision@4`, and `MRR`, as well as p10/p90 top-score percentiles and bypass rates for `reranker_enabled=false` vs `true`.
+- `multi_turn_eval.py`: Multi-turn evaluation script measuring `recall@4` with and without query condensation.
+- `latency_run.py`: End-to-end graph benchmark recording p50 and p95 latency and token counts across execution paths (kb, web, direct).
 - `golden_in_kb.jsonl`: 100 in-KB reference cases.
 - `golden_other.jsonl`: Hand-written and edge cases (out-of-scope, injection, multi-turn, edge).
 - `golden.jsonl`: The consolidated golden dataset (169 rows across `dev` and `test` splits).
 - `baseline.json`: Ground-truth benchmark output recorded on the `dev` split.
+- `latency.json`: Measured end-to-end latency and token usage benchmarks.
 
 ---
 
@@ -74,11 +77,11 @@ This directory contains evaluation datasets, baseline benchmarks, and evaluation
 ### Intent Health Check
 Verify that all 27 intents are present in the Pinecone namespace:
 ```bash
-uv run python evals/check_intents.py
+uv run python evals/tools/check_intents.py
 ```
 
 ### Retrieval Evaluation (Dev Split)
-Run quantitative metrics with bootstrap 95% confidence intervals:
+Run quantitative metrics with bootstrap 95% confidence intervals across reranking modes:
 ```bash
 uv run python evals/retrieval_eval.py evals/golden.jsonl dev
 ```
@@ -86,6 +89,18 @@ uv run python evals/retrieval_eval.py evals/golden.jsonl dev
 Optional threshold gating (e.g. require `recall@4 >= 0.889`):
 ```bash
 uv run python evals/retrieval_eval.py evals/golden.jsonl dev 0.889
+```
+
+### Multi-Turn Query Condensation Evaluation
+Evaluate `recall@4` with and without query condensation on multi-turn conversations:
+```bash
+uv run python evals/multi_turn_eval.py evals/golden.jsonl dev
+```
+
+### Latency and Token Benchmark
+Run benchmark through the real graph recording p50/p95 latency and token counts:
+```bash
+uv run python evals/latency_run.py --n-per-path 5
 ```
 
 ### Live Behavior & Quality Tests
