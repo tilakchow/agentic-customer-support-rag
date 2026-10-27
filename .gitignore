@@ -35,3 +35,4 @@ requirements.txt
 *.swo
 .DS_Store
 Thumbs.db
+scratch/

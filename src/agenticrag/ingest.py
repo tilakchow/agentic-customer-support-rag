@@ -164,15 +164,12 @@ def run_ingestion() -> None:
         len(chunks) - len(chunks_to_upsert),
     )
 
-    if not chunks_to_upsert:
-        logger.info("All chunks are identical to previous ingestion. Skipping re-embedding.")
-        return
-
     logger.info("Connecting to Pinecone index: %s...", index_name)
     pc = Pinecone(api_key=settings.pinecone_api_key)
     existing_indexes = [index_info["name"] for index_info in pc.list_indexes()]
 
-    if index_name not in existing_indexes:
+    is_new_index = index_name not in existing_indexes
+    if is_new_index:
         logger.info("Creating Pinecone index '%s' (dim=%d, cosine)...", index_name, EMBEDDING_DIM)
         pc.create_index(
             name=index_name,
@@ -180,6 +177,12 @@ def run_ingestion() -> None:
             metric="cosine",
             spec=ServerlessSpec(cloud="aws", region="us-east-1"),
         )
+        chunks_to_upsert = chunks
+        ids_to_upsert = chunk_ids
+
+    if not chunks_to_upsert:
+        logger.info("All chunks are identical to previous ingestion. Skipping re-embedding.")
+        return
 
     embeddings = get_embeddings()
 
