@@ -81,6 +81,101 @@ def is_proprietary_policy_query(query: str) -> bool:
     return any(kw in q for kw in policy_keywords)
 
 
+def is_human_escalation_request(query: str) -> bool:
+    """Detects explicit user requests to speak to a human representative, supervisor, or agent."""
+    q = query.lower()
+    escalation_keywords = [
+        "talk to human",
+        "speak to human",
+        "talk to a human",
+        "speak to a human",
+        "speak with human",
+        "speak with a human",
+        "human agent",
+        "human representative",
+        "live agent",
+        "real person",
+        "talk to someone",
+        "speak to someone",
+        "customer service rep",
+        "customer care rep",
+        "representative",
+        "supervisor",
+        "manager",
+        "support person",
+        "operator",
+        "escalate",
+        "transfer to agent",
+        "transfer me",
+        "connect me to",
+        "contact_human_agent",
+        "dont even respond",
+        "don't even respond",
+        "no one is responding",
+        "nobody responds",
+        "speak with agent",
+        "contact agent",
+        "terrible customer service",
+        "awful service",
+    ]
+    return any(kw in q for kw in escalation_keywords)
+
+
+def is_policy_sensitive_request(query: str) -> bool:
+    """Detects legal threats, lawsuits, regulatory filings, or severe escalation triggers."""
+    q = query.lower()
+    sensitive_keywords = [
+        "lawyer",
+        "attorney",
+        "lawsuit",
+        "sue you",
+        "legal action",
+        "litigation",
+        "court",
+        "consumer protection bureau",
+        "ftc complaint",
+        "better business bureau",
+        "file a complaint with",
+    ]
+    return any(kw in q for kw in sensitive_keywords)
+
+
+def is_allowed_web_fallback_query(query: str) -> bool:
+    """Restricts open web fallback strictly from executing coding, programming, or scripting requests.
+
+    Explicitly rejects programming/coding, algorithms, and developer script tasks.
+    """
+    q = query.lower()
+    disallowed_keywords = [
+        "python",
+        "javascript",
+        "typescript",
+        "java ",
+        "script",
+        "code",
+        "fibonacci",
+        "algorithm",
+        "sql query",
+        "debug code",
+        "write code",
+        "write a function",
+        "programming",
+    ]
+    return not any(kw in q for kw in disallowed_keywords)
+
+
+def route_after_scope(
+    state: AgentState,
+) -> Literal["route_question", "refuse_out_of_scope", "escalate_to_human"]:
+    """Conditional edge decision after scope classification."""
+    scope = state.get("scope", "in_scope")
+    if scope in ("needs_human", "policy_sensitive") or state.get("escalated", False):
+        return NodeName.ESCALATE_TO_HUMAN.value
+    if scope == "out_of_scope":
+        return NodeName.REFUSE_OUT_OF_SCOPE.value
+    return NodeName.ROUTE_QUESTION.value
+
+
 def route_after_router(state: AgentState) -> Literal["condense_query", "direct_answer"]:
     """Conditional edge decision: routes to query condensation (for KB) or direct response."""
     if state.get("route") == "kb":
@@ -116,6 +211,14 @@ def decide_after_kb_grade(
     if is_proprietary_policy_query(question):
         logger.info(
             "[Routing] Proprietary policy inquiry without KB evidence. Skipping web search."
+        )
+        return NodeName.ANSWER_INSUFFICIENT.value
+
+    # Prevent searching the open web for out-of-domain topics (e.g. coding, general trivia)
+    if not is_allowed_web_fallback_query(question):
+        logger.info(
+            "[Routing] Query '%s' not eligible for web fallback. Routing to answer_insufficient.",
+            question[:50],
         )
         return NodeName.ANSWER_INSUFFICIENT.value
 

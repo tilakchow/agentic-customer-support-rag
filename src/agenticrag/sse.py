@@ -80,6 +80,23 @@ async def stream_agent_generator(
         state_snapshot = await agent_app.aget_state(config)
         final_state = state_snapshot.values
         source = final_state.get("source_used", "direct")
+        ticket_payload = final_state.get("ticket_payload")
+        kb_docs = final_state.get("kb_docs", [])
+        sources = (
+            [
+                {
+                    "doc_id": doc.metadata.get("id") or doc.metadata.get("doc_id") or f"doc-{idx}",
+                    "intent": doc.metadata.get("intent", "general"),
+                    "score": doc.metadata.get("score")
+                    or doc.metadata.get("similarity_score")
+                    or 0.0,
+                    "content": doc.page_content[:200],
+                }
+                for idx, doc in enumerate(kb_docs)
+            ]
+            if kb_docs
+            else None
+        )
 
         messages = final_state.get("messages", [])
         last_content = messages[-1].content if messages else ""
@@ -90,6 +107,8 @@ async def stream_agent_generator(
                 "thread_id": thread_id,
                 "source_used": source,
                 "full_content": str(last_content),
+                "ticket_payload": ticket_payload,
+                "sources": sources,
             }
         )
 

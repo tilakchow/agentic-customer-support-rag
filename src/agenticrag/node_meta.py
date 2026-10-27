@@ -7,6 +7,9 @@ from typing import Any
 class NodeName(StrEnum):
     """Enumeration of all node identifiers across the agent state graph."""
 
+    CLASSIFY_SCOPE = "classify_scope"
+    REFUSE_OUT_OF_SCOPE = "refuse_out_of_scope"
+    ESCALATE_TO_HUMAN = "escalate_to_human"
     ROUTE_QUESTION = "route_question"
     CONDENSE_QUERY = "condense_query"
     RETRIEVE_KB = "retrieve_kb"
@@ -21,6 +24,18 @@ class NodeName(StrEnum):
 
 
 NODE_METADATA: dict[str, dict[str, Any]] = {
+    NodeName.CLASSIFY_SCOPE.value: {
+        "status_message": "Verifying inquiry scope and intent...",
+        "is_generation": False,
+    },
+    NodeName.REFUSE_OUT_OF_SCOPE.value: {
+        "status_message": "Handling out-of-scope inquiry...",
+        "is_generation": False,
+    },
+    NodeName.ESCALATE_TO_HUMAN.value: {
+        "status_message": "Escalating request to human support...",
+        "is_generation": False,
+    },
     NodeName.ROUTE_QUESTION.value: {
         "status_message": "Analyzing question & routing...",
         "is_generation": False,

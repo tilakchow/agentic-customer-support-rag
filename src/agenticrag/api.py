@@ -277,8 +277,32 @@ async def chat_endpoint(
             last_message.content if hasattr(last_message, "content") else str(last_message)
         )
         source = result.get("source_used", "unknown")
+        ticket_payload = result.get("ticket_payload")
+        kb_docs = result.get("kb_docs", [])
+        sources = (
+            [
+                {
+                    "doc_id": doc.metadata.get("id") or doc.metadata.get("doc_id") or f"doc-{idx}",
+                    "intent": doc.metadata.get("intent", "general"),
+                    "score": doc.metadata.get("score")
+                    or doc.metadata.get("similarity_score")
+                    or 0.0,
+                    "content": doc.page_content[:200],
+                }
+                for idx, doc in enumerate(kb_docs)
+            ]
+            if kb_docs
+            else None
+        )
 
-        return ChatResponse(response=str(answer_content), thread_id=thread_id, source_used=source)
+        return ChatResponse(
+            response=str(answer_content),
+            thread_id=thread_id,
+            source_used=source,
+            ticket_payload=ticket_payload,
+            sources=sources,
+        )
+
     except HTTPException:
         raise
     except Exception as e:

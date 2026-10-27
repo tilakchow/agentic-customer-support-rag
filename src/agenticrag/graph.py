@@ -5,12 +5,15 @@ from langgraph.graph import END, START, StateGraph
 from agenticrag.node_meta import NodeName
 from agenticrag.nodes import (
     answer_insufficient,
+    classify_scope,
     condense_query,
     direct_answer,
+    escalate_to_human,
     generate_from_kb,
     generate_from_web,
     grade_kb_evidence,
     grade_web_evidence,
+    refuse_out_of_scope,
     retrieve_kb,
     rewrite_query,
     route_question,
@@ -20,6 +23,7 @@ from agenticrag.routing import (
     decide_after_kb_grade,
     decide_after_web_grade,
     route_after_router,
+    route_after_scope,
 )
 from agenticrag.state import AgentState
 
@@ -34,6 +38,9 @@ def create_agent(checkpointer: Any = None):
     workflow = StateGraph(AgentState)
 
     # Add Nodes using NodeName enum
+    workflow.add_node(NodeName.CLASSIFY_SCOPE.value, classify_scope)
+    workflow.add_node(NodeName.REFUSE_OUT_OF_SCOPE.value, refuse_out_of_scope)
+    workflow.add_node(NodeName.ESCALATE_TO_HUMAN.value, escalate_to_human)
     workflow.add_node(NodeName.ROUTE_QUESTION.value, route_question)
     workflow.add_node(NodeName.CONDENSE_QUERY.value, condense_query)
     workflow.add_node(NodeName.RETRIEVE_KB.value, retrieve_kb)
@@ -47,7 +54,17 @@ def create_agent(checkpointer: Any = None):
     workflow.add_node(NodeName.ANSWER_INSUFFICIENT.value, answer_insufficient)
 
     # Add Edges
-    workflow.add_edge(START, NodeName.ROUTE_QUESTION.value)
+    workflow.add_edge(START, NodeName.CLASSIFY_SCOPE.value)
+
+    workflow.add_conditional_edges(
+        NodeName.CLASSIFY_SCOPE.value,
+        route_after_scope,
+        {
+            NodeName.ROUTE_QUESTION.value: NodeName.ROUTE_QUESTION.value,
+            NodeName.REFUSE_OUT_OF_SCOPE.value: NodeName.REFUSE_OUT_OF_SCOPE.value,
+            NodeName.ESCALATE_TO_HUMAN.value: NodeName.ESCALATE_TO_HUMAN.value,
+        },
+    )
 
     workflow.add_conditional_edges(
         NodeName.ROUTE_QUESTION.value,
@@ -87,6 +104,8 @@ def create_agent(checkpointer: Any = None):
     workflow.add_edge(NodeName.GENERATE_FROM_WEB.value, END)
     workflow.add_edge(NodeName.DIRECT_ANSWER.value, END)
     workflow.add_edge(NodeName.ANSWER_INSUFFICIENT.value, END)
+    workflow.add_edge(NodeName.REFUSE_OUT_OF_SCOPE.value, END)
+    workflow.add_edge(NodeName.ESCALATE_TO_HUMAN.value, END)
 
     if checkpointer is None:
         from langgraph.checkpoint.memory import MemorySaver

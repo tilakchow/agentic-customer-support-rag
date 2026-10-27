@@ -6,7 +6,7 @@ from functools import lru_cache
 
 from agenticrag.config import get_settings
 from agenticrag.constants import RETRIEVER_K
-from agenticrag.schemas import EvidenceGrade, RouteDecision
+from agenticrag.schemas import EvidenceGrade, RouteDecision, ScopeDecision
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +29,11 @@ def get_llm():
         request_timeout=settings.llm_timeout,
         max_retries=settings.llm_max_retries,
     )
+
+
+def get_classifier_llm():
+    """Provides ChatGroq configured with ScopeDecision structured output."""
+    return get_llm().with_structured_output(ScopeDecision, method="json_mode")
 
 
 def get_router_llm():

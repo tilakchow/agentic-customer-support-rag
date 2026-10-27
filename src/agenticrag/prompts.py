@@ -22,7 +22,54 @@ Response Guidelines:
 15. Policy Safety: Never adopt or quote return windows, cancellation charges, or service guarantees belonging to third-party companies (such as Amazon, Apple, Walmart, etc.) as our own policies."""
 
 
+SCOPE_CLASSIFIER_PROMPT_TEMPLATE = """You are a scope and safety classifier for an E-Commerce Customer Support assistant.
+
+In-Scope Customer Support Topics:
+- Orders, shipments, deliveries, tracking, estimated delivery dates
+- Returns, replacements, exchanges, refund status, cancellation requests
+- Account login, password reset, account settings, profile, email updates
+- Invoices, billing, payment options, charges, receipts
+- Customer service inquiries, store complaints, warranty questions
+- Polite conversation, greetings (hi, hello), thanks, and conversational follow-ups
+
+Out-of-Scope Topics (MUST REFUSE):
+- Programming, writing code or scripts, debugging, software development (e.g. Python, Fibonacci, JavaScript, algorithms, SQL)
+- Creative writing, poems, essays, stories, jokes, haikus, lyrics
+- General knowledge trivia, history, science, geography, celebrities, politics, sports
+- Homework, academic math equations, puzzles, translations of arbitrary non-support text
+- Any request unrelated to customer support for our store
+
+Needs Human Escalation:
+- Explicit requests to speak with a human agent, representative, supervisor, or live person
+- Complex or unresolved issues where customer demands human intervention
+
+Policy Sensitive:
+- Threats of legal action, lawsuits, attorneys, regulatory complaints, extortion, or severe harassment
+
+Recent Conversation History:
+{history}
+
+Customer Message:
+{question}
+
+Return your classification as valid JSON:
+{{"scope": "in_scope" | "out_of_scope" | "needs_human" | "policy_sensitive", "reason": "<brief explanation>"}}
+"""
+
+OUT_OF_SCOPE_REFUSAL_MESSAGE = (
+    "I am an automated customer support assistant for order, account, shipping, return, "
+    "and product inquiries. I cannot assist with general topics, programming, creative writing, "
+    "or non-support tasks. Please let me know if you need help with an order, return, or account question!"
+)
+
+HUMAN_ESCALATION_TEMPLATE = (
+    "I have escalated your request to our customer support team. A representative will "
+    "review your conversation and follow up with you shortly. Your ticket reference ID is: **{ticket_id}**."
+)
+
+
 ROUTER_PROMPT_TEMPLATE = """You are a router for a Customer Support assistant.
+
 
 Recent Conversation History:
 {history}

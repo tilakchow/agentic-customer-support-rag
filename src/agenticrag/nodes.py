@@ -2,12 +2,15 @@
 
 import asyncio
 import logging
+import uuid
+from datetime import UTC, datetime
 from typing import Any
 
 from langchain_core.documents import Document
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
 from agenticrag.clients import (
+    get_classifier_llm,
     get_grader_llm,
     get_llm,
     get_pinecone_client,
@@ -22,12 +25,15 @@ from agenticrag.prompts import (
     CONDENSE_QUERY_PROMPT_TEMPLATE,
     CUSTOMER_SUPPORT_SYSTEM_PROMPT,
     DIRECT_ANSWER_PROMPT_TEMPLATE,
+    HUMAN_ESCALATION_TEMPLATE,
     INSUFFICIENT_EVIDENCE_PROMPT_TEMPLATE,
     KB_GENERATION_HUMAN_TEMPLATE,
     KB_GRADER_HUMAN_TEMPLATE,
     KB_GRADER_SYSTEM_PROMPT,
+    OUT_OF_SCOPE_REFUSAL_MESSAGE,
     REWRITE_QUERY_PROMPT_TEMPLATE,
     ROUTER_PROMPT_TEMPLATE,
+    SCOPE_CLASSIFIER_PROMPT_TEMPLATE,
     UNTRUSTED_CONTEXT_INSTRUCTION,
     WEB_GENERATION_HUMAN_TEMPLATE,
     WEB_GRADER_HUMAN_TEMPLATE,
@@ -38,13 +44,143 @@ from agenticrag.retrieval import retrieve_kb as retrieve_kb_documents
 from agenticrag.routing import (
     get_conversation_history,
     get_latest_question,
+    is_human_escalation_request,
+    is_policy_sensitive_request,
 )
+from agenticrag.schemas import ScopeDecision
 from agenticrag.state import AgentState
 
 logger = logging.getLogger(__name__)
 
 
 # --- Async Graph Execution Nodes ---
+
+
+async def classify_scope(state: AgentState) -> dict[str, Any]:
+    """Evaluates question scope before routing.
+
+    Categorizes input into:
+    - 'in_scope': Standard customer support queries (orders, account, returns, shipping, billing, chit-chat)
+    - 'out_of_scope': Programming/code, creative writing, general trivia, homework, non-support tasks
+    - 'needs_human': Explicit human escalation requests or persistent complex complaints
+    - 'policy_sensitive': Legal threats, litigation, regulatory filings
+    """
+    question = get_latest_question(state)
+    history = get_conversation_history(state)
+
+    # Fast heuristic checks for deterministic edge cases
+    if is_human_escalation_request(question):
+        logger.info(
+            "[Scope] Fast-track heuristic: human escalation requested for: %s", question[:50]
+        )
+        return {
+            "scope": "needs_human",
+            "current_query": question,
+            "ticket_payload": None,
+            "escalated": False,
+        }
+
+    if is_policy_sensitive_request(question):
+        logger.info(
+            "[Scope] Fast-track heuristic: policy sensitive inquiry detected: %s", question[:50]
+        )
+        return {
+            "scope": "policy_sensitive",
+            "current_query": question,
+            "ticket_payload": None,
+            "escalated": False,
+        }
+
+    # Deterministic check for obvious non-support out-of-scope requests
+    q_lower = question.lower()
+    obvious_oos = [
+        "fibonacci",
+        "python script",
+        "write code",
+        "write a script",
+        "javascript code",
+        "solve equation",
+        "poem about",
+        "write a poem",
+        "write a story",
+        "tell me a joke",
+        "who is the president",
+        "capital of",
+        "speed of light",
+        "distance to the moon",
+    ]
+    if any(kw in q_lower for kw in obvious_oos):
+        logger.info(
+            "[Scope] Fast-track heuristic: obvious out_of_scope detected: %s", question[:50]
+        )
+        return {
+            "scope": "out_of_scope",
+            "current_query": question,
+            "ticket_payload": None,
+            "escalated": False,
+        }
+
+    try:
+        prompt = SCOPE_CLASSIFIER_PROMPT_TEMPLATE.format(history=history, question=question)
+        decision: ScopeDecision = await get_classifier_llm().ainvoke(prompt)
+        scope = decision.scope
+        logger.info(
+            "[Scope] Classification: %s (reason: %s) for query: %s",
+            scope,
+            decision.reason,
+            question[:50],
+        )
+    except Exception as e:
+        record_provider_failure(e)
+        logger.warning("[Scope Error] Classifier failed (%s): %s", question[:50], e)
+        # Fail-safe default: allow query to proceed to router
+        scope = "in_scope"
+
+    return {
+        "scope": scope,
+        "current_query": question,
+        "ticket_payload": None,
+        "escalated": False,
+    }
+
+
+async def refuse_out_of_scope(state: AgentState) -> dict[str, Any]:
+    """Politely refuses out-of-scope queries (e.g. coding, general trivia, poems) without calling external retrievers or web search."""
+    return {
+        "messages": [AIMessage(content=OUT_OF_SCOPE_REFUSAL_MESSAGE)],
+        "source_used": "out_of_scope_refusal",
+        "scope": "out_of_scope",
+    }
+
+
+async def escalate_to_human(state: AgentState) -> dict[str, Any]:
+    """Generates a structured customer support ticket payload and polite handoff response."""
+    question = get_latest_question(state)
+    scope = state.get("scope", "needs_human")
+    ticket_id = f"TICK-{uuid.uuid4().hex[:8].upper()}"
+    now_iso = datetime.now(UTC).isoformat()
+
+    docs = state.get("kb_docs", [])
+    doc_sources = [{"content": d.page_content[:200], "metadata": d.metadata} for d in docs]
+
+    ticket_payload = {
+        "ticket_id": ticket_id,
+        "customer_query": question,
+        "summary": f"Customer support escalation: {question[:120]}",
+        "reason": scope,
+        "timestamp": now_iso,
+        "status": "escalated",
+        "sources": doc_sources,
+    }
+
+    message_content = HUMAN_ESCALATION_TEMPLATE.format(ticket_id=ticket_id)
+
+    return {
+        "messages": [AIMessage(content=message_content)],
+        "source_used": "human_escalation",
+        "escalated": True,
+        "ticket_payload": ticket_payload,
+    }
 
 
 async def route_question(state: AgentState) -> dict[str, Any]:

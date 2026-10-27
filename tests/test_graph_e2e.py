@@ -7,7 +7,7 @@ from langchain_core.documents import Document
 from langchain_core.messages import AIMessage, HumanMessage
 
 from agenticrag.graph import create_agent
-from agenticrag.schemas import EvidenceGrade, RouteDecision
+from agenticrag.schemas import EvidenceGrade, RouteDecision, ScopeDecision
 
 
 @pytest.fixture
@@ -119,15 +119,20 @@ async def test_e2e_weak_rewrite_to_insufficient(agent_app):
     mock_search.invoke.return_value = {"answer": ""}
 
     with (
+        patch("agenticrag.nodes.get_classifier_llm") as mock_classifier,
         patch("agenticrag.nodes.get_router_llm") as mock_router,
         patch("agenticrag.nodes.get_vectorstore", return_value=mock_vs),
         patch("agenticrag.nodes.get_grader_llm") as mock_grader,
         patch("agenticrag.nodes.get_web_search", return_value=mock_search),
         patch("agenticrag.nodes.get_llm") as mock_llm,
     ):
+        mock_classifier.return_value.ainvoke = AsyncMock(
+            return_value=ScopeDecision(scope="in_scope")
+        )
         mock_router.return_value.ainvoke = AsyncMock(return_value=RouteDecision(route="kb"))
         # All grading calls return weak
         mock_grader.return_value.ainvoke = AsyncMock(return_value=EvidenceGrade(grade="weak"))
+
         # First llm call is query rewrite, second is answer_insufficient
         mock_llm.return_value.ainvoke = AsyncMock(
             side_effect=[

@@ -1,4 +1,4 @@
-"""Pydantic API request and response data models."""
+from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -32,6 +32,13 @@ class ChatResponse(BaseModel):
     thread_id: str = Field(..., description="Active thread ID for conversational continuity")
     source_used: str | None = Field(
         None, description="Data source used (private_kb, web_search, direct, etc.)"
+    )
+    ticket_payload: dict[str, Any] | None = Field(
+        None,
+        description="Structured ticket metadata when conversation is escalated to human support",
+    )
+    sources: list[dict[str, Any]] | None = Field(
+        None, description="Attributed citations and knowledge base reference chunks"
     )
 
 

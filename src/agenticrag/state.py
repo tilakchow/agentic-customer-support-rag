@@ -34,7 +34,8 @@ class AgentState(TypedDict):
     kb_grade: str
     web_grade: str
     route: str  # Router intent: 'kb' or 'direct'
-    source_used: (
-        str  # Origin of answer: 'private_kb', 'web_search', 'direct', 'insufficient_evidence'
-    )
+    source_used: str  # Origin of answer: 'private_kb', 'web_search', 'direct', 'insufficient_evidence', 'out_of_scope_refusal', 'human_escalation'
     retry_count: int
+    scope: str  # 'in_scope', 'out_of_scope', 'needs_human', 'policy_sensitive'
+    ticket_payload: dict[str, Any] | None
+    escalated: bool
