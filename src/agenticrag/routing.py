@@ -1,6 +1,7 @@
 """Query inspection helpers and pure conditional routing edges for LangGraph."""
 
 import logging
+import re
 from typing import Any, Literal
 
 from langchain_core.messages import HumanMessage
@@ -46,122 +47,115 @@ def get_conversation_history(state: AgentState, limit: int | None = None) -> str
     return "\n".join(history) if history else "No previous conversation."
 
 
+# Compiled word-boundary regexes for routing heuristics
+_INTERNAL_CONTACT_REGEX = re.compile(
+    r"\b(?:"
+    r"support\s+phone|"
+    r"phone\s+number|"
+    r"customer\s+service\s+number|"
+    r"customer\s+support\s+number|"
+    r"toll\s+free|"
+    r"hotline|"
+    r"telephone|"
+    r"call\s+you|"
+    r"call\s+support|"
+    r"helpdesk\s+number|"
+    r"contact\s+number|"
+    r"call\s+center|"
+    r"direct\s+number|"
+    r"helpline|"
+    r"support\s+number"
+    r")\b",
+    re.IGNORECASE,
+)
+
+_PROPRIETARY_POLICY_REGEX = re.compile(
+    r"\b(?:"
+    r"policy|"
+    r"warranty|"
+    r"terms\s+of\s+service|"
+    r"terms\s+and\s+conditions"
+    r")\b",
+    re.IGNORECASE,
+)
+
+_HUMAN_ESCALATION_REGEX = re.compile(
+    r"\b(?:"
+    r"(?:speak|talk|chat)\s+(?:to|with)\s+(?:a\s+)?(?:human|person|agent|representative|supervisor|manager)|"
+    r"i\s+(?:need|want)\s+to\s+(?:speak|talk)\s+to\s+(?:a\s+|your\s+)?(?:human|person|agent|representative|supervisor|manager)|"
+    r"i\s+want\s+(?:a\s+)?(?:human|person|agent|representative|supervisor|manager)|"
+    r"human\s+(?:agent|representative|person|support)|"
+    r"live\s+(?:agent|representative|person)|"
+    r"real\s+person|"
+    r"(?:transfer|connect)\s+(?:me\s+to|to)\s+(?:an?\s+)?(?:live\s+)?(?:agent|human|representative|supervisor|manager|operator)|"
+    r"talk\s+to\s+someone\s+from\s+support|"
+    r"escalate\s+(?:to\s+human|to\s+manager|to\s+supervisor|ticket)|"
+    r"contact_human_agent|"
+    r"(?:don'?t|dont|no\s+one\s+is|nobody)\s+(?:even\s+)?respond(?:s|ing)?|"
+    r"terrible\s+customer\s+service|"
+    r"awful\s+service"
+    r")\b",
+    re.IGNORECASE,
+)
+
+_POLICY_SENSITIVE_REGEX = re.compile(
+    r"\b(?:"
+    r"take\s+(?:\w+\s+)?to\s+court|"
+    r"lawyer|"
+    r"attorney|"
+    r"lawsuit|"
+    r"sue\s+you|"
+    r"legal\s+action|"
+    r"litigation|"
+    r"consumer\s+protection\s+bureau|"
+    r"ftc\s+complaint|"
+    r"better\s+business\s+bureau|"
+    r"file\s+a\s+complaint\s+with"
+    r")\b",
+    re.IGNORECASE,
+)
+
+_DISALLOWED_WEB_FALLBACK_REGEX = re.compile(
+    r"\b(?:"
+    r"write\s+(?:a\s+)?(?:python\s+|javascript\s+|bash\s+)?script|"
+    r"write\s+(?:a\s+)?function|"
+    r"write\s+(?:(?:a|some)\s+)?(?:javascript\s+|python\s+|typescript\s+)?code|"
+    r"debug\s+(?:this\s+)?(?:recursive\s+)?(?:algorithm|code)|"
+    r"(?:python|javascript|typescript|bash)\s+(?:script|code)|"
+    r"fibonacci|"
+    r"solve\s+(?:this\s+)?equation|"
+    r"algorithm|"
+    r"sql\s+query|"
+    r"programming|"
+    r"coding"
+    r")\b",
+    re.IGNORECASE,
+)
+
+
 def is_internal_contact_query(query: str) -> bool:
     """Detects if query asks for internal company contact channels (phone, hotline, email)."""
-    q = query.lower()
-    contact_keywords = [
-        "phone number",
-        "customer service number",
-        "customer support number",
-        "toll free",
-        "hotline",
-        "telephone",
-        "call you",
-        "call support",
-        "support phone",
-        "helpdesk number",
-        "contact number",
-        "call center",
-        "direct number",
-        "helpline",
-        "support number",
-    ]
-    return any(kw in q for kw in contact_keywords)
+    return bool(_INTERNAL_CONTACT_REGEX.search(query))
 
 
 def is_proprietary_policy_query(query: str) -> bool:
     """Detects inquiries regarding proprietary company policies to prevent external web hallucination."""
-    q = query.lower()
-    policy_keywords = [
-        "policy",
-        "warranty",
-        "terms of service",
-        "terms and conditions",
-    ]
-    return any(kw in q for kw in policy_keywords)
+    return bool(_PROPRIETARY_POLICY_REGEX.search(query))
 
 
 def is_human_escalation_request(query: str) -> bool:
     """Detects explicit user requests to speak to a human representative, supervisor, or agent."""
-    q = query.lower()
-    escalation_keywords = [
-        "talk to human",
-        "speak to human",
-        "talk to a human",
-        "speak to a human",
-        "speak with human",
-        "speak with a human",
-        "human agent",
-        "human representative",
-        "live agent",
-        "real person",
-        "talk to someone",
-        "speak to someone",
-        "customer service rep",
-        "customer care rep",
-        "representative",
-        "supervisor",
-        "manager",
-        "support person",
-        "operator",
-        "escalate",
-        "transfer to agent",
-        "transfer me",
-        "connect me to",
-        "contact_human_agent",
-        "dont even respond",
-        "don't even respond",
-        "no one is responding",
-        "nobody responds",
-        "speak with agent",
-        "contact agent",
-        "terrible customer service",
-        "awful service",
-    ]
-    return any(kw in q for kw in escalation_keywords)
+    return bool(_HUMAN_ESCALATION_REGEX.search(query))
 
 
 def is_policy_sensitive_request(query: str) -> bool:
     """Detects legal threats, lawsuits, regulatory filings, or severe escalation triggers."""
-    q = query.lower()
-    sensitive_keywords = [
-        "lawyer",
-        "attorney",
-        "lawsuit",
-        "sue you",
-        "legal action",
-        "litigation",
-        "court",
-        "consumer protection bureau",
-        "ftc complaint",
-        "better business bureau",
-        "file a complaint with",
-    ]
-    return any(kw in q for kw in sensitive_keywords)
+    return bool(_POLICY_SENSITIVE_REGEX.search(query))
 
 
 def is_allowed_web_fallback_query(query: str) -> bool:
-    """Restricts open web fallback strictly from executing coding, programming, or scripting requests.
-
-    Explicitly rejects programming/coding, algorithms, and developer script tasks.
-    """
-    q = query.lower()
-    disallowed_keywords = [
-        "python",
-        "javascript",
-        "typescript",
-        "java ",
-        "script",
-        "code",
-        "fibonacci",
-        "algorithm",
-        "sql query",
-        "debug code",
-        "write code",
-        "write a function",
-        "programming",
-    ]
-    return not any(kw in q for kw in disallowed_keywords)
+    """Restricts open web fallback strictly from executing coding, programming, or scripting requests."""
+    return not bool(_DISALLOWED_WEB_FALLBACK_REGEX.search(query))
 
 
 def route_after_scope(

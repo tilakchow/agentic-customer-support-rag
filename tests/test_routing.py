@@ -169,3 +169,43 @@ def test_is_proprietary_policy_query():
     assert is_proprietary_policy_query("What is your refund policy?") is True
     assert is_proprietary_policy_query("Is there a 2-year warranty?") is True
     assert is_proprietary_policy_query("How do I reset my password?") is False
+
+
+def test_is_allowed_web_fallback_query():
+    from agenticrag.routing import is_allowed_web_fallback_query
+
+    # Must be ALLOWED
+    assert is_allowed_web_fallback_query("promo code") is True
+    assert is_allowed_web_fallback_query("discount code") is True
+    assert is_allowed_web_fallback_query("zip code") is True
+    assert is_allowed_web_fallback_query("my prescription order") is True
+    assert is_allowed_web_fallback_query("coupon code not working") is True
+
+    # Must be BLOCKED
+    assert is_allowed_web_fallback_query("write a python script") is False
+    assert is_allowed_web_fallback_query("debug this code") is False
+    assert is_allowed_web_fallback_query("write a function") is False
+
+
+def test_human_escalation_intent_phrases():
+    from agenticrag.routing import is_human_escalation_request
+
+    # Intent phrases must escalate
+    assert is_human_escalation_request("I want to speak to a manager") is True
+    assert is_human_escalation_request("Can I talk to a supervisor?") is True
+    assert is_human_escalation_request("I want a representative right now") is True
+    assert is_human_escalation_request("Connect me to a live agent") is True
+
+    # Negative test: standalone manager context must NOT escalate
+    assert is_human_escalation_request("my manager asked me to track this order") is False
+    assert is_human_escalation_request("our store operator received the package") is False
+
+
+def test_policy_sensitive_intent_phrases():
+    from agenticrag.routing import is_policy_sensitive_request
+
+    assert is_policy_sensitive_request("I will take you to court") is True
+    assert is_policy_sensitive_request("I am contacting my lawyer") is True
+
+    # Standalone 'court' in innocent context must NOT trigger
+    assert is_policy_sensitive_request("Deliver to 123 Court Street") is False

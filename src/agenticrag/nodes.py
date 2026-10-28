@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import re
 import time
 import uuid
 from datetime import UTC, datetime
@@ -52,11 +53,37 @@ from agenticrag.routing import (
     is_policy_sensitive_request,
 )
 from agenticrag.schemas import ClaimSupportCheck, ScopeDecision
-from agenticrag.security import filter_canary_and_leaks, is_prompt_injection, redact_pii
+from agenticrag.security import (
+    check_llm_injection,
+    filter_canary_and_leaks,
+    is_prompt_injection,
+    is_suspicious_for_injection,
+    redact_pii,
+)
 from agenticrag.state import AgentState
 from agenticrag.telemetry import get_telemetry_collector
 
 logger = logging.getLogger(__name__)
+
+_OBVIOUS_OOS_REGEX = re.compile(
+    r"\b(?:"
+    r"fibonacci|"
+    r"python\s+script|"
+    r"write\s+code|"
+    r"write\s+(?:a\s+)?script|"
+    r"javascript\s+code|"
+    r"solve\s+(?:the\s+)?equation|"
+    r"poem\s+about|"
+    r"write\s+(?:a\s+)?poem|"
+    r"write\s+(?:a\s+)?story|"
+    r"tell\s+me\s+a\s+joke|"
+    r"who\s+is\s+the\s+president|"
+    r"capital\s+of|"
+    r"speed\s+of\s+light|"
+    r"distance\s+to\s+the\s+moon"
+    r")\b",
+    re.IGNORECASE,
+)
 
 
 # --- Async Graph Execution Nodes ---
@@ -74,8 +101,11 @@ async def classify_scope(state: AgentState) -> dict[str, Any]:
     question = get_latest_question(state)
     history = get_conversation_history(state)
 
-    # Injection and adversarial prompt exfiltration check (M3)
+    # Injection and adversarial prompt exfiltration check (fast-path regex + second-layer LLM)
     is_inj, inj_reason = is_prompt_injection(question)
+    if not is_inj and is_suspicious_for_injection(question):
+        is_inj, inj_reason = await check_llm_injection(question)
+
     if is_inj:
         logger.warning("[Security] Prompt injection blocked: %s", inj_reason)
         return {
@@ -111,25 +141,8 @@ async def classify_scope(state: AgentState) -> dict[str, Any]:
             "escalated": False,
         }
 
-    # Deterministic check for obvious non-support out-of-scope requests
-    q_lower = question.lower()
-    obvious_oos = [
-        "fibonacci",
-        "python script",
-        "write code",
-        "write a script",
-        "javascript code",
-        "solve equation",
-        "poem about",
-        "write a poem",
-        "write a story",
-        "tell me a joke",
-        "who is the president",
-        "capital of",
-        "speed of light",
-        "distance to the moon",
-    ]
-    if any(kw in q_lower for kw in obvious_oos):
+    # Deterministic check for obvious non-support out-of-scope requests (word-boundary regex)
+    if _OBVIOUS_OOS_REGEX.search(question):
         logger.info(
             "[Scope] Fast-track heuristic: obvious out_of_scope detected (len=%d)", len(question)
         )
