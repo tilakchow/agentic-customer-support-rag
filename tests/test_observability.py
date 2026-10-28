@@ -92,3 +92,67 @@ def test_detailed_health_check_endpoint():
     assert "provider_metrics" in data
     assert "telemetry_summary" in data
     assert "status" in data
+
+
+def test_span_opentelemetry_attributes_and_hashed_tenant():
+    """Ensures span records route, score_type, top_score, kb_version, and hashed tenant_id."""
+    collector = get_telemetry_collector()
+    start = datetime.now(UTC)
+    end = datetime.now(UTC)
+
+    span = collector.record_span(
+        node_name="retrieve_kb",
+        duration_ms=12.4,
+        start_dt=start,
+        end_dt=end,
+        input_tokens=100,
+        output_tokens=50,
+        route="kb",
+        score_type="rerank",
+        top_score=0.9123,
+        tenant_id="tenant-alpha-123",
+        status="success",
+    )
+
+    assert span.route == "kb"
+    assert span.score_type == "rerank"
+    assert span.top_score == 0.9123
+    assert span.tenant_id_hash is not None
+    assert "tenant-alpha-123" not in span.tenant_id_hash
+    assert len(span.tenant_id_hash) == 16
+    assert span.total_tokens == 150
+    assert span.estimated_cost_usd > 0
+
+
+@pytest.mark.asyncio
+async def test_traced_node_records_non_zero_duration():
+    """Ensures @traced_node accurately measures real non-zero execution duration for async nodes."""
+    import asyncio
+
+    from agenticrag.telemetry import traced_node
+
+    collector = get_telemetry_collector()
+    collector.clear()
+
+    @traced_node("mock_slow_node")
+    async def mock_slow_node(state: dict):
+        await asyncio.sleep(0.02)  # Simulate 20ms work
+        return {
+            "route": "direct",
+            "score_type": "cosine",
+            "top_similarity_score": 0.85,
+        }
+
+    res = await mock_slow_node({"tenant_id": "tenant-xyz"})
+    assert res["route"] == "direct"
+
+    spans = collector.get_recent_spans()
+    assert len(spans) == 1
+    span = spans[0]
+    assert span["node_name"] == "mock_slow_node"
+    assert span["duration_ms"] >= 15.0  # Real duration measured, non-zero
+    assert span["status"] == "success"
+    assert span["route"] == "direct"
+    assert span["score_type"] == "cosine"
+    assert span["top_score"] == 0.85
+    assert span["tenant_id_hash"] is not None

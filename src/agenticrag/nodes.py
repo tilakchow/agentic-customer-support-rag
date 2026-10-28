@@ -3,7 +3,6 @@
 import asyncio
 import logging
 import re
-import time
 import uuid
 from datetime import UTC, datetime
 from typing import Any
@@ -64,7 +63,7 @@ from agenticrag.security import (
     redact_pii,
 )
 from agenticrag.state import AgentState
-from agenticrag.telemetry import get_telemetry_collector
+from agenticrag.telemetry import get_telemetry_collector, traced_node
 
 logger = logging.getLogger(__name__)
 
@@ -92,6 +91,7 @@ _OBVIOUS_OOS_REGEX = re.compile(
 # --- Async Graph Execution Nodes ---
 
 
+@traced_node("classify_scope")
 async def classify_scope(state: AgentState) -> dict[str, Any]:
     """Evaluates question scope before routing.
 
@@ -202,6 +202,7 @@ async def classify_scope(state: AgentState) -> dict[str, Any]:
     }
 
 
+@traced_node("refuse_out_of_scope")
 async def refuse_out_of_scope(state: AgentState) -> dict[str, Any]:
     """Politely refuses out-of-scope queries (e.g. coding, general trivia, poems, injections) without calling external retrievers or web search."""
     question = get_latest_question(state)
@@ -219,6 +220,7 @@ async def refuse_out_of_scope(state: AgentState) -> dict[str, Any]:
     }
 
 
+@traced_node("escalate_to_human")
 async def escalate_to_human(state: AgentState) -> dict[str, Any]:
     """Generates a structured customer support ticket payload and polite handoff response."""
     question = get_latest_question(state)
@@ -249,6 +251,7 @@ async def escalate_to_human(state: AgentState) -> dict[str, Any]:
     }
 
 
+@traced_node("route_question")
 async def route_question(state: AgentState) -> dict[str, Any]:
     """Analyzes user inquiry and classifies route to private knowledge base or direct conversation."""
     question = get_latest_question(state)
@@ -287,6 +290,7 @@ async def route_question(state: AgentState) -> dict[str, Any]:
     }
 
 
+@traced_node("retrieve_kb")
 async def retrieve_kb(state: AgentState) -> dict[str, Any]:
     """Queries Pinecone vector store using the current search query with similarity scores."""
     query = state.get("current_query", "")
@@ -340,18 +344,6 @@ async def retrieve_kb(state: AgentState) -> dict[str, Any]:
     )
     logger.debug("[KB Retriever] Redacted query: %s", redact_pii(query))
 
-    try:
-        get_telemetry_collector().record_span(
-            node_name="retrieve_kb",
-            duration_ms=0.0,
-            start_dt=datetime.now(UTC),
-            end_dt=datetime.now(UTC),
-            fallback_triggered=kb_retrieval_failed,
-            status="error" if kb_retrieval_failed else "success",
-        )
-    except Exception as tel_err:
-        logger.debug("[Telemetry Non-fatal]: %s", tel_err)
-
     return {
         "kb_docs": docs,
         "kb_retrieval_failed": kb_retrieval_failed,
@@ -360,6 +352,7 @@ async def retrieve_kb(state: AgentState) -> dict[str, Any]:
     }
 
 
+@traced_node("grade_kb_evidence")
 async def grade_kb_evidence(state: AgentState) -> dict[str, Any]:
     """Evaluates whether retrieved knowledge base documents are sufficient to answer the inquiry."""
     question = get_latest_question(state)
@@ -448,6 +441,7 @@ def get_tavily_semaphore() -> asyncio.Semaphore:
     return _tavily_semaphore
 
 
+@traced_node("search_web")
 async def search_web(state: AgentState) -> dict[str, Any]:
     """Executes external web search via Tavily asynchronously with timeout and concurrency throttling."""
     query = state.get("current_query", "")
@@ -500,6 +494,7 @@ async def search_web(state: AgentState) -> dict[str, Any]:
         return {"web_results": "", "web_search_failed": True}
 
 
+@traced_node("grade_web_evidence")
 async def grade_web_evidence(state: AgentState) -> dict[str, Any]:
     """Evaluates whether web search results are relevant and sufficient to answer the question."""
     if state.get("web_search_failed", False):
@@ -546,6 +541,7 @@ def _message_text(response: Any) -> str:
     return response.content if hasattr(response, "content") else str(response)
 
 
+@traced_node("condense_query")
 async def condense_query(state: AgentState) -> dict[str, Any]:
     """Condenses user query with conversation history into a standalone query.
 
@@ -580,6 +576,7 @@ async def condense_query(state: AgentState) -> dict[str, Any]:
         return {"current_query": question}
 
 
+@traced_node("rewrite_query")
 async def rewrite_query(state: AgentState) -> dict[str, Any]:
     """Rewrites current search query to optimize retrieval precision for subsequent searches."""
     current_query = state.get("current_query") or get_latest_question(state)
@@ -605,41 +602,13 @@ async def _generate_support_message(
     prompt_or_messages: Any, fallback_text: str, source_used: str
 ) -> dict[str, Any]:
     """Executes LLM synthesis with error containment and graceful customer fallback."""
-    t0 = time.perf_counter()
-    start_dt = datetime.now(UTC)
     try:
         response = await get_llm().ainvoke(prompt_or_messages)
-        duration_ms = (time.perf_counter() - t0) * 1000.0
-        end_dt = datetime.now(UTC)
         content = _message_text(response)
         # Apply canary & leak filtering and PII redaction (M3)
         content = filter_canary_and_leaks(str(content))
         meta = getattr(response, "response_metadata", {}) or {}
         usage = getattr(response, "usage_metadata", None)
-
-        in_tok = (
-            getattr(usage, "input_tokens", 0)
-            if usage
-            else (meta.get("token_usage", {}) or {}).get("prompt_tokens", 0)
-        )
-        out_tok = (
-            getattr(usage, "output_tokens", 0)
-            if usage
-            else (meta.get("token_usage", {}) or {}).get("completion_tokens", 0)
-        )
-
-        try:
-            get_telemetry_collector().record_span(
-                node_name=source_used,
-                duration_ms=duration_ms,
-                start_dt=start_dt,
-                end_dt=end_dt,
-                input_tokens=in_tok or 0,
-                output_tokens=out_tok or 0,
-                status="success",
-            )
-        except Exception as tel_err:
-            logger.debug("[Telemetry Non-fatal]: %s", tel_err)
 
         ai_msg = AIMessage(content=str(content), response_metadata=meta, usage_metadata=usage)
         return {"messages": [ai_msg], "source_used": source_used}
@@ -692,6 +661,7 @@ async def check_claim_support(question: str, context: str, response: str) -> Cla
         return ClaimSupportCheck(supported=True, reason=f"Evaluator error (fail-open): {e}")
 
 
+@traced_node("generate_from_kb")
 async def generate_from_kb(state: AgentState) -> dict[str, Any]:
     """Synthesizes customer response grounded in retrieved internal knowledge base documents with citations."""
     question = get_latest_question(state)
@@ -769,6 +739,7 @@ async def generate_from_kb(state: AgentState) -> dict[str, Any]:
     return result
 
 
+@traced_node("generate_from_web")
 async def generate_from_web(state: AgentState) -> dict[str, Any]:
     """Synthesizes customer response grounded in verified external web search information."""
     question = get_latest_question(state)
@@ -784,6 +755,7 @@ async def generate_from_web(state: AgentState) -> dict[str, Any]:
     return await _generate_support_message(messages, DEFAULT_UNAVAILABLE_APOLOGY, "web_search")
 
 
+@traced_node("direct_answer")
 async def direct_answer(state: AgentState) -> dict[str, Any]:
     """Generates direct answer for greetings, conversational chit-chat, or meta questions."""
     question = get_latest_question(state)
@@ -796,6 +768,7 @@ async def direct_answer(state: AgentState) -> dict[str, Any]:
     )
 
 
+@traced_node("answer_insufficient")
 async def answer_insufficient(state: AgentState) -> dict[str, Any]:
     """Generates a polite notice when knowledge base and web searches cannot answer the customer inquiry."""
     existing_messages = state.get("messages", [])
