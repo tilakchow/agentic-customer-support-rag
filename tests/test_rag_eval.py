@@ -103,14 +103,20 @@ def test_proprietary_policy_traps_blocked_from_web_search():
 
 
 def test_open_domain_questions_route_to_web_search_on_weak_kb():
-    """Open domain queries with weak KB evidence safely fall back to search_web."""
+    """Open domain queries with weak KB evidence fall back to search_web when web fallback is enabled, or answer_insufficient when disabled."""
+    from unittest.mock import MagicMock
+
+    enabled_settings = MagicMock(web_fallback_enabled=True)
     open_items = [item for item in GOLDEN_EVAL_DATASET if item["type"] == "open_domain"]
     for item in open_items:
         state = {
             "kb_grade": "weak",
             "messages": [HumanMessage(content=item["query"])],
         }
-        decision = decide_after_kb_grade(state)
+        # By default (disabled):
+        assert decide_after_kb_grade(state) == NodeName.ANSWER_INSUFFICIENT.value
+        # When explicitly enabled:
+        decision = decide_after_kb_grade(state, settings=enabled_settings)
         assert decision == NodeName.SEARCH_WEB.value
 
 

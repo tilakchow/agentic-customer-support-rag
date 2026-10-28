@@ -98,6 +98,10 @@ async def test_e2e_kb_weak_to_web_good(agent_app):
     }
 
     with (
+        patch(
+            "agenticrag.routing.get_settings",
+            return_value=MagicMock(web_fallback_enabled=True, max_retries=1),
+        ),
         patch("agenticrag.nodes.get_router_llm") as mock_router,
         patch("agenticrag.nodes.get_vectorstore", return_value=mock_vs),
         patch("agenticrag.nodes.get_grader_llm") as mock_grader,
@@ -137,6 +141,10 @@ async def test_e2e_weak_rewrite_to_insufficient(agent_app):
     mock_search.invoke.return_value = {"answer": ""}
 
     with (
+        patch(
+            "agenticrag.routing.get_settings",
+            return_value=MagicMock(web_fallback_enabled=True, max_retries=1),
+        ),
         patch("agenticrag.nodes.get_classifier_llm") as mock_classifier,
         patch("agenticrag.nodes.get_router_llm") as mock_router,
         patch("agenticrag.nodes.get_vectorstore", return_value=mock_vs),
@@ -220,6 +228,10 @@ async def test_e2e_pinecone_failure_falls_back_to_web(agent_app):
     }
 
     with (
+        patch(
+            "agenticrag.routing.get_settings",
+            return_value=MagicMock(web_fallback_enabled=True, max_retries=1),
+        ),
         patch("agenticrag.nodes.get_router_llm") as mock_router,
         patch("agenticrag.nodes.get_vectorstore", return_value=mock_vs),
         patch("agenticrag.nodes.get_grader_llm") as mock_grader,
@@ -252,6 +264,10 @@ async def test_e2e_tavily_failure_falls_back_to_insufficient(agent_app):
     mock_search.invoke.side_effect = TimeoutError("Tavily search timeout")
 
     with (
+        patch(
+            "agenticrag.routing.get_settings",
+            return_value=MagicMock(web_fallback_enabled=True, max_retries=1),
+        ),
         patch("agenticrag.nodes.get_router_llm") as mock_router,
         patch("agenticrag.nodes.get_vectorstore", return_value=mock_vs),
         patch("agenticrag.nodes.get_grader_llm") as mock_grader,

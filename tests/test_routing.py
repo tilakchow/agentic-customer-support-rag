@@ -32,18 +32,47 @@ def test_decide_after_kb_grade_good():
     assert decide_after_kb_grade(state) == NodeName.GENERATE_FROM_KB.value
 
 
-def test_decide_after_kb_grade_weak():
-    state = {"kb_grade": "weak"}
-    assert decide_after_kb_grade(state) == NodeName.SEARCH_WEB.value
-
-
-def test_decide_after_kb_grade_weak_contact_number():
-    # When user asks for a phone number and KB doesn't have it, do NOT search the open web!
-    state = {
-        "kb_grade": "weak",
-        "messages": [HumanMessage(content="can i know the customer service number !")],
-    }
+def test_decide_after_kb_grade_default_disabled():
+    # By default, WEB_FALLBACK_ENABLED=False -> always routes to answer_insufficient on weak KB evidence
+    state = {"kb_grade": "weak", "messages": [HumanMessage(content="Where does FedEx ship?")]}
     assert decide_after_kb_grade(state) == NodeName.ANSWER_INSUFFICIENT.value
+
+
+def test_decide_after_kb_grade_enabled_allowed_queries():
+    from unittest.mock import MagicMock
+
+    enabled_settings = MagicMock(web_fallback_enabled=True)
+    allowed_queries = [
+        "Does FedEx deliver on Saturdays in Germany?",
+        "What are the physical dimensions of the XYZ bluetooth speaker?",
+        "What is DHL Express standard international transit time?",
+        "How do I install the battery in the remote control?",
+    ]
+    for q in allowed_queries:
+        state = {"kb_grade": "weak", "messages": [HumanMessage(content=q)]}
+        assert (
+            decide_after_kb_grade(state, settings=enabled_settings) == NodeName.SEARCH_WEB.value
+        ), f"Expected SEARCH_WEB for allowed query: {q}"
+
+
+def test_decide_after_kb_grade_enabled_denied_categories_matrix():
+    from unittest.mock import MagicMock
+
+    enabled_settings = MagicMock(web_fallback_enabled=True)
+    denied_matrix = {
+        "policy": "What is your refund policy on opened merchandise?",
+        "pricing": "What are your monthly subscription fees and discount promos?",
+        "warranty": "Does your product warranty cover replacement screen defects?",
+        "contact": "What is the toll-free customer support phone number?",
+        "accounts": "How do I reset my account login credentials and 2FA?",
+        "coding": "Write a python script to calculate fibonacci numbers",
+    }
+    for category, query in denied_matrix.items():
+        state = {"kb_grade": "weak", "messages": [HumanMessage(content=query)]}
+        assert (
+            decide_after_kb_grade(state, settings=enabled_settings)
+            == NodeName.ANSWER_INSUFFICIENT.value
+        ), f"Expected ANSWER_INSUFFICIENT for denied category '{category}': {query}"
 
 
 def test_decide_after_web_grade_failure():
@@ -174,17 +203,20 @@ def test_is_proprietary_policy_query():
 def test_is_allowed_web_fallback_query():
     from agenticrag.routing import is_allowed_web_fallback_query
 
-    # Must be ALLOWED
-    assert is_allowed_web_fallback_query("promo code") is True
-    assert is_allowed_web_fallback_query("discount code") is True
-    assert is_allowed_web_fallback_query("zip code") is True
-    assert is_allowed_web_fallback_query("my prescription order") is True
-    assert is_allowed_web_fallback_query("coupon code not working") is True
+    # Generic product / carrier / postal inquiries MUST be ALLOWED
+    assert is_allowed_web_fallback_query("zip code lookup for shipment") is True
+    assert is_allowed_web_fallback_query("FedEx international transit time") is True
+    assert is_allowed_web_fallback_query("What are the product dimensions?") is True
 
-    # Must be BLOCKED
+    # Policy, pricing, warranty, contact, accounts, and coding MUST be BLOCKED
+    assert is_allowed_web_fallback_query("promo code") is False
+    assert is_allowed_web_fallback_query("discount code") is False
+    assert is_allowed_web_fallback_query("return policy") is False
+    assert is_allowed_web_fallback_query("warranty claim") is False
+    assert is_allowed_web_fallback_query("support phone number") is False
+    assert is_allowed_web_fallback_query("reset account password") is False
     assert is_allowed_web_fallback_query("write a python script") is False
     assert is_allowed_web_fallback_query("debug this code") is False
-    assert is_allowed_web_fallback_query("write a function") is False
 
 
 def test_human_escalation_intent_phrases():

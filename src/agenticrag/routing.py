@@ -115,8 +115,19 @@ _POLICY_SENSITIVE_REGEX = re.compile(
     re.IGNORECASE,
 )
 
-_DISALLOWED_WEB_FALLBACK_REGEX = re.compile(
+_DENIED_WEB_FALLBACK_REGEX = re.compile(
     r"\b(?:"
+    # Policy: refunds, returns, terms, privacy, compliance, cancellation policy, guarantees
+    r"policy|refund|refunds|return|returns|terms|privacy|cancellation|compliance|"
+    # Pricing: price, pricing, cost, fee, charge, discount, promo, rate, invoice, billing, subscription
+    r"price|pricing|cost|costs|fee|fees|charge|charges|discount|discounts|promo|rate|rates|invoice|invoices|billing|subscription|"
+    # Warranty: warranty, guarantee, repair, replacement, defect, coverage
+    r"warranty|guarantee|repair|repairs|replacement|replacements|defect|defects|coverage|"
+    # Contact: phone, hotline, toll-free, email, hours, live chat, call center, customer service
+    r"contact|phone|email|hotline|toll\s+free|helpline|support\s+hours|live\s+chat|call\s+center|support\s+number|customer\s+service|"
+    # Accounts: password, login, account, credentials, 2fa, mfa, username, sign in, log in, reset password
+    r"password|passwords|login|account|accounts|credentials|2fa|mfa|username|sign\s+in|log\s+in|reset\s+password|"
+    # Coding / scripts
     r"write\s+(?:a\s+)?(?:python\s+|javascript\s+|bash\s+)?script|"
     r"write\s+(?:a\s+)?function|"
     r"write\s+(?:(?:a|some)\s+)?(?:javascript\s+|python\s+|typescript\s+)?code|"
@@ -154,8 +165,13 @@ def is_policy_sensitive_request(query: str) -> bool:
 
 
 def is_allowed_web_fallback_query(query: str) -> bool:
-    """Restricts open web fallback strictly from executing coding, programming, or scripting requests."""
-    return not bool(_DISALLOWED_WEB_FALLBACK_REGEX.search(query))
+    """Restricts open web fallback strictly to generic product/carrier queries.
+
+    Never allows policy, pricing, warranty, contact, accounts, or coding queries.
+    """
+    if not query or not query.strip():
+        return True
+    return not bool(_DENIED_WEB_FALLBACK_REGEX.search(query))
 
 
 def route_after_scope(

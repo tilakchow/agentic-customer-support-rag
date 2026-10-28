@@ -556,8 +556,9 @@ async def search_web(state: AgentState) -> dict[str, Any]:
                 if result.get("answer"):
                     lines.append(f"Tavily summary: {result.get('answer')}")
                 for item in result.get("results", []):
+                    url = item.get("url", "")
                     lines.append(
-                        f"Title: {item.get('title', '')}\nContent: {item.get('content', '')}"
+                        f"Title: {item.get('title', '')}\nURL: {url}\nContent: {item.get('content', '')}"
                     )
                 web_text = "\n\n".join(lines) if lines else ""
             else:
