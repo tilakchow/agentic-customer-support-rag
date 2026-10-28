@@ -51,10 +51,10 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
         {!collapsed ? (
           <div className="flex items-center gap-2 px-1">
             <div className="w-6 h-6 rounded-[var(--radius-xs)] bg-[var(--color-ink)] text-[var(--color-canvas)] flex items-center justify-center font-bold text-[12px]">
-              K
+              B
             </div>
             <span className="font-semibold text-[14px] text-[var(--color-ink)] tracking-tight">
-              Kalyx
+              Bitext Support
             </span>
           </div>
         ) : null}

@@ -29,7 +29,7 @@ export function AppContent() {
   // Theme setup: defaults to system preference, toggleable
   const [theme, setTheme] = useState<"light" | "dark">(() => {
     try {
-      const stored = localStorage.getItem("kalyx_theme")
+      const stored = localStorage.getItem("bitext_theme")
       if (stored === "dark" || stored === "light") return stored
       return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"
     } catch {
@@ -39,7 +39,7 @@ export function AppContent() {
 
   useEffect(() => {
     try {
-      localStorage.setItem("kalyx_theme", theme)
+      localStorage.setItem("bitext_theme", theme)
     } catch {}
     if (theme === "dark") {
       document.documentElement.classList.add("dark")
@@ -230,7 +230,7 @@ export function AppContent() {
               </button>
             )}
             <span className="text-[13px] font-semibold text-[var(--color-ink)]">
-              Kalyx Support
+              Bitext Support
             </span>
             <span
               className={`w-2 h-2 rounded-full ${

@@ -41,10 +41,10 @@ export const WelcomeHero: React.FC<WelcomeHeroProps> = ({ onSelectQuery }) => {
       {/* Product Mark & Wordmark */}
       <div className="flex items-center gap-2.5 mb-3">
         <div className="w-9 h-9 rounded-[var(--radius-md)] bg-[var(--color-ink)] text-[var(--color-canvas)] flex items-center justify-center font-bold text-[16px] tracking-tight shadow-[var(--shadow-card)]">
-          K
+          B
         </div>
         <span className="font-semibold text-[20px] tracking-tight text-[var(--color-ink)]">
-          Kalyx Support
+          Bitext Support
         </span>
       </div>
 

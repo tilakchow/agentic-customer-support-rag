@@ -1,6 +1,6 @@
 # Frontend Design System
 
-> **Identity:** *Kalyx* — Scholar's parchment behind clean glass. Precision customer support search & reasoning assistant.
+> **Identity:** *Bitext Support* — Scholar's parchment behind clean glass. Precision customer support search & reasoning assistant powered by Bitext knowledge base.
 
 ## 1. Design Language & Principles
 
