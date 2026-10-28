@@ -256,3 +256,22 @@ Instructions:
 Return valid JSON:
 {{"supported": true | false, "reason": "<brief explanation>", "unsupported_claims": ["<list of any unsupported claims>"]}}
 """
+
+
+STRICT_REGEN_SYSTEM_PROMPT = (
+    CUSTOMER_SUPPORT_SYSTEM_PROMPT
+    + "\nCRITICAL GROUNDING REQUIREMENT: Your previous response contained ungrounded or unsupported claims. "
+    "You MUST regenerate the response using ONLY the explicit facts from the provided context. "
+    "Do NOT mention or assume any facts outside the context."
+)
+
+STRICT_REGEN_HUMAN_TEMPLATE = """Previous answer contained unsupported claims that must be omitted:
+{unsupported_claims}
+
+Context from Knowledge Base:
+{context}
+
+Customer Question:
+{question}
+
+Please provide an answer strictly supported by the context above. If the context does not contain enough information to address part of the inquiry, clearly state that this information is not available in our records."""

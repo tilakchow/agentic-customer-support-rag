@@ -30,6 +30,9 @@ class Settings(BaseSettings):
         default="sentence-transformers/all-MiniLM-L6-v2", validation_alias="EMBEDDING_MODEL"
     )
     groq_model: str = Field(default="openai/gpt-oss-20b", validation_alias="GROQ_MODEL")
+    faithfulness_model: str = Field(
+        default="openai/gpt-oss-20b", validation_alias="FAITHFULNESS_MODEL"
+    )
     max_retries: int = Field(default=1, validation_alias="MAX_RETRIES")
     llm_timeout: float = Field(default=30.0, validation_alias="LLM_TIMEOUT")
     llm_max_retries: int = Field(default=2, validation_alias="LLM_MAX_RETRIES")

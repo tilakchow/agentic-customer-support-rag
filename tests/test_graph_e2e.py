@@ -7,7 +7,7 @@ from langchain_core.documents import Document
 from langchain_core.messages import AIMessage, HumanMessage
 
 from agenticrag.graph import create_agent
-from agenticrag.schemas import EvidenceGrade, RouteDecision, ScopeDecision
+from agenticrag.schemas import ClaimSupportCheck, EvidenceGrade, RouteDecision, ScopeDecision
 
 
 @pytest.fixture
@@ -20,6 +20,15 @@ def default_mock_classifier():
     with patch("agenticrag.nodes.get_classifier_llm") as mock:
         mock.return_value.ainvoke = AsyncMock(
             return_value=ScopeDecision(scope="in_scope", reasoning="In scope test query")
+        )
+        yield mock
+
+
+@pytest.fixture(autouse=True)
+def default_mock_faithfulness():
+    with patch("agenticrag.nodes.get_faithfulness_llm") as mock:
+        mock.return_value.ainvoke = AsyncMock(
+            return_value=ClaimSupportCheck(supported=True, reason="Grounded in test context")
         )
         yield mock
 

@@ -39,6 +39,8 @@ from agenticrag.prompts import (
     REWRITE_QUERY_PROMPT_TEMPLATE,
     ROUTER_PROMPT_TEMPLATE,
     SCOPE_CLASSIFIER_PROMPT_TEMPLATE,
+    STRICT_REGEN_HUMAN_TEMPLATE,
+    STRICT_REGEN_SYSTEM_PROMPT,
     UNTRUSTED_CONTEXT_INSTRUCTION,
     WEB_GENERATION_HUMAN_TEMPLATE,
     WEB_GRADER_HUMAN_TEMPLATE,
@@ -669,9 +671,9 @@ async def check_claim_support(question: str, context: str, response: str) -> Cla
 
     try:
         prompt = CLAIM_SUPPORT_PROMPT_TEMPLATE.format(
-            context=context[:3000],
+            context=context,
             question=question,
-            response=response[:2000],
+            response=response,
         )
         decision: ClaimSupportCheck = await get_faithfulness_llm().ainvoke(prompt)
         return decision
@@ -708,27 +710,59 @@ async def generate_from_kb(state: AgentState) -> dict[str, Any]:
     messages = [SystemMessage(content=system_text), HumanMessage(content=human_text)]
     result = await _generate_support_message(messages, DEFAULT_UNAVAILABLE_APOLOGY, "private_kb")
 
-    # Post-generation faithfulness guardrail (M2)
+    # Post-generation faithfulness guardrail (M2 enforcement)
     ai_msgs = result.get("messages", [])
     if ai_msgs and context.strip():
         ans_text = _message_text(ai_msgs[-1])
         try:
             check = await check_claim_support(question=question, context=context, response=ans_text)
             if not check.supported:
+                unsupported_str = (
+                    "\n".join(f"- {c}" for c in check.unsupported_claims) or check.reason
+                )
                 logger.warning(
-                    "[Faithfulness Guardrail] Unsupported claims detected: %s (reason: %s)",
-                    check.unsupported_claims,
-                    check.reason,
+                    "[Faithfulness Guardrail] Unsupported claims detected on first attempt: %s. Initiating 1-turn grounded regeneration.",
+                    unsupported_str,
                 )
-                guarded_text = (
-                    ans_text.strip()
-                    + "\n\n*Note: Please verify specific details with our official support team if your inquiry involves unusual account exceptions.*"
+                regen_messages = [
+                    SystemMessage(content=STRICT_REGEN_SYSTEM_PROMPT),
+                    HumanMessage(
+                        content=STRICT_REGEN_HUMAN_TEMPLATE.format(
+                            unsupported_claims=unsupported_str,
+                            context=context,
+                            question=question,
+                        )
+                    ),
+                ]
+                regen_result = await _generate_support_message(
+                    regen_messages, DEFAULT_UNAVAILABLE_APOLOGY, "private_kb"
                 )
-                ai_msgs[-1] = AIMessage(
-                    content=guarded_text,
-                    response_metadata=getattr(ai_msgs[-1], "response_metadata", {}),
-                    usage_metadata=getattr(ai_msgs[-1], "usage_metadata", None),
+                regen_msgs = regen_result.get("messages", [])
+                regen_ans_text = _message_text(regen_msgs[-1]) if regen_msgs else ""
+
+                # Re-verify claim support on the regenerated output
+                retry_check = await check_claim_support(
+                    question=question, context=context, response=regen_ans_text
                 )
+                if retry_check.supported:
+                    logger.info(
+                        "[Faithfulness Guardrail] Regeneration succeeded with verified claims."
+                    )
+                    return regen_result
+                else:
+                    logger.warning(
+                        "[Faithfulness Guardrail] Regeneration still failed verification: %s. Escalating to human and returning answer_insufficient.",
+                        retry_check.unsupported_claims,
+                    )
+                    insufficient_res = await answer_insufficient(state)
+                    insufficient_res["escalated"] = True
+                    insufficient_res["ticket_payload"] = {
+                        "reason": "faithfulness_violation",
+                        "question": question,
+                        "unsupported_claims": retry_check.unsupported_claims,
+                        "details": retry_check.reason,
+                    }
+                    return insufficient_res
         except Exception as e:
             logger.debug("[Faithfulness Post-Check Non-fatal]: %s", e)
 

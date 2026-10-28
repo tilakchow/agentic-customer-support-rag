@@ -3,6 +3,7 @@
 import logging
 import time
 from functools import lru_cache
+from typing import Any
 
 from agenticrag.config import get_settings
 from agenticrag.constants import RETRIEVER_K
@@ -16,14 +17,16 @@ _last_retriever_failure_time: float = 0.0
 RETRIEVER_BACKOFF_SECONDS: float = 30.0
 
 
-@lru_cache(maxsize=1)
-def get_llm():
+@lru_cache(maxsize=4)
+def get_llm(model: str | None = None) -> Any:
     """Lazily initializes ChatGroq LLM client with timeout and max_retries configured."""
     from langchain_groq import ChatGroq
 
     settings = get_settings()
-    return ChatGroq(
-        model=settings.groq_model,
+    selected_model = model or settings.groq_model
+    groq_cls: Any = ChatGroq
+    return groq_cls(
+        model=selected_model,
         temperature=0,
         api_key=settings.groq_api_key or None,
         request_timeout=settings.llm_timeout,
@@ -46,9 +49,11 @@ def get_grader_llm():
     return get_llm().with_structured_output(EvidenceGrade, method="json_mode")
 
 
-def get_faithfulness_llm():
+def get_faithfulness_llm(model: str | None = None):
     """Provides ChatGroq configured with ClaimSupportCheck structured output for faithfulness verification."""
-    return get_llm().with_structured_output(ClaimSupportCheck, method="json_mode")
+    settings = get_settings()
+    target_model = model or settings.faithfulness_model
+    return get_llm(model=target_model).with_structured_output(ClaimSupportCheck, method="json_mode")
 
 
 @lru_cache(maxsize=1)

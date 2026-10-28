@@ -16,7 +16,16 @@ from agenticrag.nodes import (
     search_web,
 )
 from agenticrag.routing import decide_after_kb_grade
-from agenticrag.schemas import EvidenceGrade, ScopeDecision
+from agenticrag.schemas import ClaimSupportCheck, EvidenceGrade, ScopeDecision
+
+
+@pytest.fixture(autouse=True)
+def default_mock_faithfulness():
+    with patch("agenticrag.nodes.get_faithfulness_llm") as mock:
+        mock.return_value.ainvoke = AsyncMock(
+            return_value=ClaimSupportCheck(supported=True, reason="Grounded in context")
+        )
+        yield mock
 
 
 @pytest.mark.asyncio

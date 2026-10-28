@@ -111,8 +111,57 @@ async def test_generate_from_kb_annotates_sources_and_faithfulness():
 
 
 @pytest.mark.asyncio
-async def test_generate_from_kb_appends_note_on_unsupported_claim():
-    """generate_from_kb adds guardrail disclaimer when claim support check fails."""
+@pytest.mark.asyncio
+async def test_generate_from_kb_regenerates_on_unsupported_claim_and_succeeds():
+    """generate_from_kb initiates 1-turn stricter regeneration when first attempt has unsupported claims."""
+    sample_docs = [
+        Document(
+            page_content="Warranty covers defects for 12 months.",
+            metadata={"id": "doc-war-001", "intent": "check_cancellation_fee", "score": 0.85},
+        )
+    ]
+    state = {
+        "messages": [HumanMessage(content="Does warranty cover water damage?")],
+        "kb_docs": sample_docs,
+    }
+
+    with (
+        patch("agenticrag.nodes.get_llm") as mock_llm,
+        patch("agenticrag.nodes.get_faithfulness_llm") as mock_faith,
+    ):
+        # First generation produces hallucination; second generation (regen) is grounded
+        mock_llm.return_value.ainvoke = AsyncMock(
+            side_effect=[
+                AIMessage(content="Yes, water damage is fully covered for 5 years."),
+                AIMessage(
+                    content="Our warranty covers manufacturer defects for 12 months. Water damage is not specified in our records."
+                ),
+            ]
+        )
+        # First faith check fails; second faith check passes
+        mock_faith.return_value.ainvoke = AsyncMock(
+            side_effect=[
+                ClaimSupportCheck(
+                    supported=False,
+                    reason="Water damage and 5 years not in context",
+                    unsupported_claims=["water damage covered", "5 years"],
+                ),
+                ClaimSupportCheck(supported=True, reason="Grounded in 12 month warranty context"),
+            ]
+        )
+
+        result = await generate_from_kb(state)  # type: ignore[arg-type]
+
+        assert result["source_used"] == "private_kb"
+        content = str(result["messages"][0].content)
+        assert "12 months" in content
+        assert mock_llm.return_value.ainvoke.call_count == 2
+        assert mock_faith.return_value.ainvoke.call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_generate_from_kb_regeneration_still_unsupported_escalates():
+    """When regenerated response is still unsupported, routes to answer_insufficient and escalates to human."""
     sample_docs = [
         Document(
             page_content="Warranty covers defects for 12 months.",
@@ -129,20 +178,42 @@ async def test_generate_from_kb_appends_note_on_unsupported_claim():
         patch("agenticrag.nodes.get_faithfulness_llm") as mock_faith,
     ):
         mock_llm.return_value.ainvoke = AsyncMock(
-            return_value=AIMessage(content="Yes, water damage is fully covered for 5 years.")
+            side_effect=[
+                AIMessage(content="Water damage is covered for 5 years."),
+                AIMessage(content="Water damage is still covered for 5 years."),
+                AIMessage(
+                    content="I apologize, but our records do not have sufficient information."
+                ),
+            ]
         )
         mock_faith.return_value.ainvoke = AsyncMock(
             return_value=ClaimSupportCheck(
                 supported=False,
-                reason="Water damage and 5 years not in context",
-                unsupported_claims=["water damage covered", "5 years"],
+                reason="Water damage not in context",
+                unsupported_claims=["water damage"],
             )
         )
 
         result = await generate_from_kb(state)  # type: ignore[arg-type]
 
-        content = str(result["messages"][0].content)
-        assert "Note: Please verify specific details" in content
+        assert result["source_used"] == "insufficient_evidence"
+        assert result.get("escalated") is True
+        assert result.get("ticket_payload") is not None
+        assert result["ticket_payload"]["reason"] == "faithfulness_violation"
+
+
+def test_configurable_faithfulness_model():
+    """Verifies that FAITHFULNESS_MODEL is configurable via Settings."""
+    from agenticrag.clients import get_faithfulness_llm
+    from agenticrag.config import Settings
+
+    with patch("agenticrag.clients.get_settings") as mock_settings:
+        mock_settings.return_value = Settings(
+            faithfulness_model="groq/llama-3.3-70b-versatile",
+            groq_api_key="test-key",
+        )
+        judge = get_faithfulness_llm()
+        assert judge is not None
 
 
 def test_chat_response_source_attribution():
@@ -167,3 +238,19 @@ def test_chat_response_source_attribution():
     assert resp.sources[0]["doc_id"] == "doc-ret-001"
     assert resp.sources[0]["intent"] == "cancel_order"
     assert resp.sources[0]["score"] == 0.92
+
+
+def test_faithfulness_benchmark_dataset_distribution_and_wilson_ci():
+    """Verifies that faithfulness benchmark has >= 40 cases with 20 supported and 20 hallucinated."""
+    from evals.faithfulness_eval import FAITHFULNESS_BENCHMARK_CASES, wilson_score_interval
+
+    assert len(FAITHFULNESS_BENCHMARK_CASES) >= 40
+    supported = [c for c in FAITHFULNESS_BENCHMARK_CASES if c["ground_truth_supported"]]
+    unsupported = [c for c in FAITHFULNESS_BENCHMARK_CASES if not c["ground_truth_supported"]]
+    assert len(supported) == 20
+    assert len(unsupported) == 20
+
+    # Wilson score interval calculation
+    lower, upper = wilson_score_interval(0.90, 40, confidence=0.95)
+    assert 0.70 < lower < 0.90
+    assert 0.90 < upper <= 1.0
