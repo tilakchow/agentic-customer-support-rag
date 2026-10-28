@@ -1,0 +1,10 @@
+{"id": "hn-001", "query": "I want to cancel my recurring monthly software membership", "expected_intent": "cancel_service", "confounding_intent": "cancel_order", "type": "hard_negative", "split": "dev"}
+{"id": "hn-002", "query": "Cancel the shipment of my physical package before it delivers", "expected_intent": "cancel_order", "confounding_intent": "cancel_service", "type": "hard_negative", "split": "dev"}
+{"id": "hn-003", "query": "How do I claim product warranty for a broken screen?", "expected_intent": "warranty_claim", "confounding_intent": "insurance_policy", "type": "hard_negative", "split": "dev"}
+{"id": "hn-004", "query": "Can I get a cash refund at the brick and mortar retail branch?", "expected_intent": "retail_refund", "confounding_intent": "online_refund", "type": "hard_negative", "split": "dev"}
+{"id": "hn-005", "query": "Reset the login credentials for my corporate business account", "expected_intent": "business_auth", "confounding_intent": "consumer_auth", "type": "hard_negative", "split": "dev"}
+{"id": "hn-006", "query": "Where is the invoice receipt for my tax deductible expenses?", "expected_intent": "tax_invoice", "confounding_intent": "delivery_receipt", "type": "hard_negative", "split": "dev"}
+{"id": "hn-007", "query": "Change delivery destination address before package dispatch", "expected_intent": "edit_address", "confounding_intent": "edit_billing", "type": "hard_negative", "split": "dev"}
+{"id": "hn-008", "query": "Update my credit card expiration date and billing address", "expected_intent": "edit_billing", "confounding_intent": "edit_address", "type": "hard_negative", "split": "dev"}
+{"id": "hn-009", "query": "Track international freight customs clearance", "expected_intent": "customs_tracking", "confounding_intent": "domestic_tracking", "type": "hard_negative", "split": "dev"}
+{"id": "hn-010", "query": "How do I return a digital gift card that was sent by email?", "expected_intent": "gift_card_refund", "confounding_intent": "physical_return", "type": "hard_negative", "split": "dev"}

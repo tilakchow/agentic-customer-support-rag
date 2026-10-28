@@ -42,6 +42,8 @@ def evaluate_retrieval(
     in_kb_scores: list[float] = []
     oos_scores: list[float] = []
     adv_scores: list[float] = []
+    hard_neg_scores: list[float] = []
+    hard_neg_avoidance: list[float] = []
 
     for row in rows:
         if "query" not in row or row.get("split") != split:
@@ -60,13 +62,32 @@ def evaluate_retrieval(
                 oos_scores.append(top)
             continue
 
-        rel = [d.metadata.get("intent") == expected_intent for d in res.docs]
+        expected_doc_id = row.get("expected_doc_id") or row.get("doc_id")
+        if expected_doc_id:
+            rel = [
+                d.metadata.get("doc_id") == expected_doc_id
+                or d.metadata.get("id") == expected_doc_id
+                or d.metadata.get("intent") == expected_intent
+                for d in res.docs
+            ]
+        else:
+            rel = [d.metadata.get("intent") == expected_intent for d in res.docs]
+
         hit.append(float(any(rel)))
         prec.append(sum(rel) / k)
         rr.append(next((1.0 / (i + 1) for i, r in enumerate(rel) if r), 0.0))
         in_scores.append(top)
         if row_type == "in_kb":
             in_kb_scores.append(top)
+        elif row_type == "hard_negative":
+            # For hard negatives, check if confounding incorrect doc was avoided at rank 1
+            confounding_doc_id = row.get("confounding_doc_id")
+            top_doc = res.docs[0].metadata if res.docs else {}
+            avoided = top_doc.get("doc_id") != confounding_doc_id and top_doc.get(
+                "intent"
+            ) != row.get("confounding_intent")
+            hard_neg_scores.append(top)
+            hard_neg_avoidance.append(float(avoided))
 
     def summ(v: list[float]) -> dict[str, Any]:
         mean_val = round(sum(v) / len(v), 3) if v else 0.0
@@ -93,6 +114,13 @@ def evaluate_retrieval(
         "n_oos": len(oos_scores),
         "n_adversarial": len(adv_scores),
         "n_oos_total": len(all_oos_adv),
+        "hard_negatives": {
+            "avoidance_rate": summ(hard_neg_avoidance),
+            "top_score_mean": round(sum(hard_neg_scores) / len(hard_neg_scores), 4)
+            if hard_neg_scores
+            else 0.0,
+            "n": len(hard_neg_scores),
+        },
     }
 
     if skip_grader_score is not None:

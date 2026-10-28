@@ -1,0 +1,105 @@
+{"id": "REAL-001", "query": "hey my ord-1001 is it shipped yet??? ordered 3 days ago", "expected_intent": "check_order", "type": "order", "split": "dev"}
+{"id": "REAL-002", "query": "i need help returning an opened item asap!!", "expected_intent": "return_policy", "type": "in_kb", "split": "dev"}
+{"id": "REAL-003", "query": "can i get a refund if i opened the box? bought last week", "expected_intent": "refund_policy", "type": "in_kb", "split": "dev"}
+{"id": "REAL-004", "query": "package was marked delivered but nothing at my door :(", "expected_intent": "delivery_issue", "type": "in_kb", "split": "dev"}
+{"id": "REAL-005", "query": "wheres my order ORD-1002 tracking says ups??", "expected_intent": "check_order", "type": "order", "split": "dev"}
+{"id": "REAL-006", "query": "how long do refunds take to show up on my card???", "expected_intent": "refund_timing", "type": "in_kb", "split": "dev"}
+{"id": "REAL-007", "query": "i want to speak to a real person right now!!", "expected_intent": "escalation", "type": "needs_human", "split": "dev"}
+{"id": "REAL-008", "query": "cancel my order ORD-1003 before you ship it pls", "expected_intent": "cancellation", "type": "order", "split": "dev"}
+{"id": "REAL-009", "query": "do you guys ship to canada or europe?", "expected_intent": "international_shipping", "type": "in_kb", "split": "dev"}
+{"id": "REAL-010", "query": "got charged twice for the same purchase on my visa", "expected_intent": "billing_duplicate", "type": "in_kb", "split": "dev"}
+{"id": "REAL-011", "query": "my promo code SAVE20 didnt work at checkout why??", "expected_intent": "promo_code", "type": "in_kb", "split": "dev"}
+{"id": "REAL-012", "query": "what credit cards do u accept here?", "expected_intent": "payment_methods", "type": "in_kb", "split": "dev"}
+{"id": "REAL-013", "query": "track ord-1004 please", "expected_intent": "check_order", "type": "order", "split": "dev"}
+{"id": "REAL-014", "query": "can i exchange my headphones for the black color instead", "expected_intent": "exchange_policy", "type": "in_kb", "split": "dev"}
+{"id": "REAL-015", "query": "item arrived broken and box was crushed", "expected_intent": "damaged_item", "type": "in_kb", "split": "dev"}
+{"id": "REAL-016", "query": "forgot my password and reset email never arrived", "expected_intent": "account_login", "type": "in_kb", "split": "dev"}
+{"id": "REAL-017", "query": "how do i change delivery address for ORD-1001?", "expected_intent": "change_address", "type": "order", "split": "dev"}
+{"id": "REAL-018", "query": "why was my payment declined when i have funds?", "expected_intent": "payment_issue", "type": "in_kb", "split": "dev"}
+{"id": "REAL-019", "query": "do u offer price match if price dropped yesterday?", "expected_intent": "price_match", "type": "in_kb", "split": "dev"}
+{"id": "REAL-020", "query": "what are your customer support working hours?", "expected_intent": "support_hours", "type": "in_kb", "split": "dev"}
+{"id": "REAL-021", "query": "whats warranty coverage on electronics products?", "expected_intent": "warranty_info", "type": "in_kb", "split": "dev"}
+{"id": "REAL-022", "query": "is shipping free for orders over 50 dollars?", "expected_intent": "shipping_rates", "type": "in_kb", "split": "dev"}
+{"id": "REAL-023", "query": "open a ticket for missing items in order ORD-1002", "expected_intent": "create_ticket", "type": "order", "split": "dev"}
+{"id": "REAL-024", "query": "can i pay using paypal or apple pay?", "expected_intent": "payment_methods", "type": "in_kb", "split": "dev"}
+{"id": "REAL-025", "query": "return label wont print gives 404 error", "expected_intent": "return_label", "type": "in_kb", "split": "dev"}
+{"id": "REAL-026", "query": "how do i delete my account and data?", "expected_intent": "delete_account", "type": "in_kb", "split": "dev"}
+{"id": "REAL-027", "query": "my order ORD-1003 still says processing why so slow", "expected_intent": "check_order", "type": "order", "split": "dev"}
+{"id": "REAL-028", "query": "can someone call me at my phone number?", "expected_intent": "callback_request", "type": "needs_human", "split": "dev"}
+{"id": "REAL-029", "query": "received wrong size shirt ordered M got XL", "expected_intent": "wrong_item", "type": "in_kb", "split": "dev"}
+{"id": "REAL-030", "query": "do you have student or military discounts?", "expected_intent": "discounts", "type": "in_kb", "split": "dev"}
+{"id": "REAL-031", "query": "track shipment for order 1001", "expected_intent": "check_order", "type": "order", "split": "dev"}
+{"id": "REAL-032", "query": "how do i update my credit card on file?", "expected_intent": "billing_update", "type": "in_kb", "split": "dev"}
+{"id": "REAL-033", "query": "package delayed due to weather when will it come", "expected_intent": "shipping_delay", "type": "in_kb", "split": "dev"}
+{"id": "REAL-034", "query": "file a formal complaint regarding rude service", "expected_intent": "complaint", "type": "needs_human", "split": "dev"}
+{"id": "REAL-035", "query": "can i pick up order at local store or warehouse?", "expected_intent": "store_pickup", "type": "in_kb", "split": "dev"}
+{"id": "REAL-036", "query": "what is restocking fee on return items?", "expected_intent": "restocking_fee", "type": "in_kb", "split": "dev"}
+{"id": "REAL-037", "query": "tracking number TRK-FEDEX-987654 not updating", "expected_intent": "tracking_issue", "type": "in_kb", "split": "dev"}
+{"id": "REAL-038", "query": "can i combine two separate orders into one shipment?", "expected_intent": "combine_orders", "type": "in_kb", "split": "dev"}
+{"id": "REAL-039", "query": "gift receipt option available at checkout?", "expected_intent": "gift_receipt", "type": "in_kb", "split": "dev"}
+{"id": "REAL-040", "query": "im hiring a lawyer if my refund isnt issued today", "expected_intent": "legal_threat", "type": "policy_sensitive", "split": "dev"}
+{"id": "REAL-041", "query": "are clearance items eligible for refund or final sale?", "expected_intent": "clearance_policy", "type": "in_kb", "split": "dev"}
+{"id": "REAL-042", "query": "need an itemized tax invoice for my company", "expected_intent": "invoice_request", "type": "in_kb", "split": "dev"}
+{"id": "REAL-043", "query": "does warranty cover accidental water damage?", "expected_intent": "warranty_coverage", "type": "in_kb", "split": "dev"}
+{"id": "REAL-044", "query": "order ORD-1004 shows returned did u get it yet?", "expected_intent": "check_order", "type": "order", "split": "dev"}
+{"id": "REAL-045", "query": "change my email address on my profile please", "expected_intent": "account_update", "type": "in_kb", "split": "dev"}
+{"id": "REAL-046", "query": "how do i redeem my loyalty reward points?", "expected_intent": "rewards_points", "type": "in_kb", "split": "dev"}
+{"id": "REAL-047", "query": "do you ship to po box or apo addresses?", "expected_intent": "po_box_shipping", "type": "in_kb", "split": "dev"}
+{"id": "REAL-048", "query": "i was sent a refurbished unit instead of brand new", "expected_intent": "product_condition", "type": "in_kb", "split": "dev"}
+{"id": "REAL-049", "query": "need human representative supervisor now", "expected_intent": "escalation", "type": "needs_human", "split": "dev"}
+{"id": "REAL-050", "query": "what happens if item is out of stock after order?", "expected_intent": "out_of_stock", "type": "in_kb", "split": "dev"}
+{"id": "REAL-051", "query": "why is sales tax charged on my order?", "expected_intent": "sales_tax", "type": "in_kb", "split": "dev"}
+{"id": "REAL-052", "query": "status of my replacement unit that was sent", "expected_intent": "replacement_status", "type": "in_kb", "split": "dev"}
+{"id": "REAL-053", "query": "my gift card balance is showing zero when it had 50", "expected_intent": "gift_card_issue", "type": "in_kb", "split": "dev"}
+{"id": "REAL-054", "query": "can i modify items in my order before dispatch?", "expected_intent": "modify_order", "type": "in_kb", "split": "dev"}
+{"id": "REAL-055", "query": "do i need the original manufacturer packaging to return?", "expected_intent": "return_packaging", "type": "in_kb", "split": "dev"}
+{"id": "REAL-056", "query": "courier dropped package in the rain ruined everything", "expected_intent": "damaged_delivery", "type": "in_kb", "split": "dev"}
+{"id": "REAL-057", "query": "how do i unsubscribe from your marketing emails?", "expected_intent": "unsubscribe", "type": "in_kb", "split": "dev"}
+{"id": "REAL-058", "query": "can you expedite shipping to overnight delivery?", "expected_intent": "expedited_shipping", "type": "in_kb", "split": "dev"}
+{"id": "REAL-059", "query": "got an email saying payment failed how do i retry?", "expected_intent": "payment_retry", "type": "in_kb", "split": "dev"}
+{"id": "REAL-060", "query": "where do i drop off return packages ups or usps?", "expected_intent": "return_dropoff", "type": "in_kb", "split": "dev"}
+{"id": "REAL-061", "query": "my coupon expired yesterday can you honor it please?", "expected_intent": "coupon_extension", "type": "in_kb", "split": "dev"}
+{"id": "REAL-062", "query": "product manual missing from the package where can i download?", "expected_intent": "user_manual", "type": "in_kb", "split": "dev"}
+{"id": "REAL-063", "query": "report fraud unauthorized charge on my account", "expected_intent": "fraud_report", "type": "policy_sensitive", "split": "dev"}
+{"id": "REAL-064", "query": "is signature required upon package delivery?", "expected_intent": "signature_delivery", "type": "in_kb", "split": "dev"}
+{"id": "REAL-065", "query": "do you offer bulk or enterprise pricing discounts?", "expected_intent": "bulk_pricing", "type": "in_kb", "split": "dev"}
+{"id": "REAL-066", "query": "my cart keeps emptying when i click checkout", "expected_intent": "technical_issue", "type": "in_kb", "split": "dev"}
+{"id": "REAL-067", "query": "can i change payment method after placing the order?", "expected_intent": "change_payment", "type": "in_kb", "split": "dev"}
+{"id": "REAL-068", "query": "does price include customs duties for international shipping?", "expected_intent": "customs_duties", "type": "in_kb", "split": "dev"}
+{"id": "REAL-069", "query": "i need to speak with customer support agent", "expected_intent": "escalation", "type": "needs_human", "split": "dev"}
+{"id": "REAL-070", "query": "can i return an item purchased with a gift card?", "expected_intent": "gift_card_return", "type": "in_kb", "split": "dev"}
+{"id": "REAL-071", "query": "my tracking says handed to resident but nobody home", "expected_intent": "misdelivered", "type": "in_kb", "split": "dev"}
+{"id": "REAL-072", "query": "how do i enable two factor authentication on my account?", "expected_intent": "security_2fa", "type": "in_kb", "split": "dev"}
+{"id": "REAL-073", "query": "order status ORD-1001 tracking fedex", "expected_intent": "check_order", "type": "order", "split": "dev"}
+{"id": "REAL-074", "query": "is extended warranty transferable to another person?", "expected_intent": "warranty_transfer", "type": "in_kb", "split": "dev"}
+{"id": "REAL-075", "query": "how long do i have to return an item 14 or 30 days?", "expected_intent": "return_window", "type": "in_kb", "split": "dev"}
+{"id": "REAL-076", "query": "can i get a refund directly to my bank account instead of card?", "expected_intent": "refund_destination", "type": "in_kb", "split": "dev"}
+{"id": "REAL-077", "query": "package missing parts accessories cables not in box", "expected_intent": "missing_parts", "type": "in_kb", "split": "dev"}
+{"id": "REAL-078", "query": "order ORD-1002 was it delivered to front porch or mailbox?", "expected_intent": "check_order", "type": "order", "split": "dev"}
+{"id": "REAL-079", "query": "how do i leave a review for a purchased product?", "expected_intent": "product_reviews", "type": "in_kb", "split": "dev"}
+{"id": "REAL-080", "query": "can i schedule a specific delivery date and time?", "expected_intent": "scheduled_delivery", "type": "in_kb", "split": "dev"}
+{"id": "REAL-081", "query": "do you match amazon or best buy prices?", "expected_intent": "price_matching", "type": "in_kb", "split": "dev"}
+{"id": "REAL-082", "query": "why is my tracking number showing not found on courier site?", "expected_intent": "tracking_not_found", "type": "in_kb", "split": "dev"}
+{"id": "REAL-083", "query": "cancel my order ORD-1003 right now", "expected_intent": "cancel_order", "type": "order", "split": "dev"}
+{"id": "REAL-084", "query": "can i return an item to a physical retail store?", "expected_intent": "store_return", "type": "in_kb", "split": "dev"}
+{"id": "REAL-085", "query": "do you offer trade-in for older model devices?", "expected_intent": "trade_in", "type": "in_kb", "split": "dev"}
+{"id": "REAL-086", "query": "my order was split into multiple packages why?", "expected_intent": "split_shipment", "type": "in_kb", "split": "dev"}
+{"id": "REAL-087", "query": "create a ticket for damaged item in order ORD-1004", "expected_intent": "create_ticket", "type": "order", "split": "dev"}
+{"id": "REAL-088", "query": "what is your policy on price drops within 14 days?", "expected_intent": "price_protection", "type": "in_kb", "split": "dev"}
+{"id": "REAL-089", "query": "can i change billing address after order submitted?", "expected_intent": "billing_address", "type": "in_kb", "split": "dev"}
+{"id": "REAL-090", "query": "do you ship to freight forwarders or reshippers?", "expected_intent": "freight_forwarder", "type": "in_kb", "split": "dev"}
+{"id": "REAL-091", "query": "help me with order ORD-1001 not received", "expected_intent": "check_order", "type": "order", "split": "dev"}
+{"id": "REAL-092", "query": "how do i print a return shipping label without a printer?", "expected_intent": "mobile_return_code", "type": "in_kb", "split": "dev"}
+{"id": "REAL-093", "query": "item stopped working after 2 months who pays shipping for repair?", "expected_intent": "warranty_shipping", "type": "in_kb", "split": "dev"}
+{"id": "REAL-094", "query": "my credit card was charged 3 times for one order", "expected_intent": "multiple_charges", "type": "in_kb", "split": "dev"}
+{"id": "REAL-095", "query": "speak with a live human representative please", "expected_intent": "escalation", "type": "needs_human", "split": "dev"}
+{"id": "REAL-096", "query": "how do i apply a tax exemption certificate to my account?", "expected_intent": "tax_exemption", "type": "in_kb", "split": "dev"}
+{"id": "REAL-097", "query": "can i get my receipt re-sent to my email address?", "expected_intent": "resend_receipt", "type": "in_kb", "split": "dev"}
+{"id": "REAL-098", "query": "courier delivered package to wrong house down the street", "expected_intent": "wrong_delivery_address", "type": "in_kb", "split": "dev"}
+{"id": "REAL-099", "query": "is there a fee if i return an opened item?", "expected_intent": "return_fee", "type": "in_kb", "split": "dev"}
+{"id": "REAL-100", "query": "status of order ORD-1003 is it delayed?", "expected_intent": "check_order", "type": "order", "split": "dev"}
+{"id": "REAL-101", "query": "how long is the warranty on rechargeable batteries?", "expected_intent": "battery_warranty", "type": "in_kb", "split": "dev"}
+{"id": "REAL-102", "query": "can i use multiple promo codes on the same purchase?", "expected_intent": "stacking_coupons", "type": "in_kb", "split": "dev"}
+{"id": "REAL-103", "query": "i received a package i never ordered did someone hack my account?", "expected_intent": "security_unauthorized", "type": "policy_sensitive", "split": "dev"}
+{"id": "REAL-104", "query": "can i get a discount code for my first order?", "expected_intent": "first_order_discount", "type": "in_kb", "split": "dev"}
+{"id": "REAL-105", "query": "check status of ORD-1004 and open support ticket", "expected_intent": "check_and_ticket", "type": "order", "split": "dev"}
