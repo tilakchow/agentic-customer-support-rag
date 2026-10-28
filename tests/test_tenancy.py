@@ -370,3 +370,33 @@ def test_chat_and_stream_pass_tenant_id_to_graph(monkeypatch):
         kind == "stream" and data.get("tenant_id") == "tenant-beta"
         for kind, data, _ in recorded_inputs
     )
+
+
+def test_anonymous_multi_turn_thread_access_with_shifting_proxy_ips():
+    """Verifies that an anonymous user asking follow-up queries on the same thread is not blocked by shifting edge proxy IPs."""
+    client = TestClient(app)
+    thread_id = "anon-thread-followup-test"
+
+    # Turn 1: request comes via proxy IP 1
+    resp1 = client.post(
+        "/chat",
+        json={"message": "First query", "thread_id": thread_id},
+        headers={"X-Forwarded-For": "76.76.21.21"},
+    )
+    assert resp1.status_code == 200, f"Turn 1 failed: {resp1.text}"
+
+    # Turn 2: second query on same thread via different proxy IP 2
+    resp2 = client.post(
+        "/chat",
+        json={"message": "Second query", "thread_id": thread_id},
+        headers={"X-Forwarded-For": "76.76.21.99"},
+    )
+    assert resp2.status_code == 200, f"Turn 2 failed with cross-user error: {resp2.text}"
+
+    # Turn 3: third query with persistent X-Session-ID header
+    resp3 = client.post(
+        "/chat",
+        json={"message": "Third query", "thread_id": thread_id},
+        headers={"X-Session-ID": "test-session-12345", "X-Forwarded-For": "76.76.21.150"},
+    )
+    assert resp3.status_code == 200, f"Turn 3 failed: {resp3.text}"

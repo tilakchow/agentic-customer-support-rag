@@ -64,8 +64,27 @@ function getClientApiBase(): string {
 
 const API_BASE = getClientApiBase();
 
+function getSessionId(): string {
+  try {
+    if (typeof window !== "undefined" && window.sessionStorage) {
+      let sid = window.sessionStorage.getItem("rag_session_id");
+      if (!sid) {
+        sid = "sess_" + Math.random().toString(36).substring(2, 12) + Date.now().toString(36);
+        window.sessionStorage.setItem("rag_session_id", sid);
+      }
+      return sid;
+    }
+  } catch {
+    // Fallback if sessionStorage is disabled/restricted
+  }
+  return "default_session";
+}
+
 function getHeaders(extraHeaders: Record<string, string> = {}): Record<string, string> {
-  return { ...extraHeaders };
+  return {
+    "X-Session-ID": getSessionId(),
+    ...extraHeaders,
+  };
 }
 
 export async function streamMessage(

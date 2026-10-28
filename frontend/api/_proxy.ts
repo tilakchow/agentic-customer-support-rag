@@ -80,8 +80,10 @@ export async function proxyToBackend(
 
   try {
     const apiKey = process.env.API_KEY || req.headers.get("x-api-key") || ""
+    const sessionId = req.headers.get("x-session-id") || req.headers.get("x-client-session") || ""
     const headers: Record<string, string> = {
       ...(apiKey ? { "X-API-Key": apiKey } : {}),
+      ...(sessionId ? { "X-Session-ID": sessionId } : {}),
       "X-Forwarded-For": clientIp,
     }
 
