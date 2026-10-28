@@ -53,10 +53,41 @@ class TelemetryCollector:
     def __init__(self, max_buffer_size: int = 500):
         self._max_buffer_size = max_buffer_size
         self._spans: deque[TelemetrySpan] = deque(maxlen=max_buffer_size)
+        self._fail_events: list[dict[str, Any]] = []
         self._lock = threading.Lock()
         self._total_recorded_spans: int = 0
         self._total_tokens_consumed: int = 0
         self._total_estimated_cost: float = 0.0
+
+    def record_fail_decision(
+        self,
+        node_name: str,
+        error_type: str,
+        mode: str,
+        details: str | None = None,
+    ) -> dict[str, Any]:
+        """Records a fail-open or fail-closed event with node name and error type."""
+        event = {
+            "node_name": node_name,
+            "error_type": error_type,
+            "mode": mode,
+            "details": details[:200] if details else None,
+            "timestamp": datetime.now(UTC).isoformat(),
+        }
+        with self._lock:
+            self._fail_events.append(event)
+        logger.info(
+            "[Fail-Mode] Node %s evaluated as fail-%s on error %s",
+            node_name,
+            mode,
+            error_type,
+        )
+        return event
+
+    def get_fail_events(self) -> list[dict[str, Any]]:
+        """Returns recorded fail-open and fail-closed events."""
+        with self._lock:
+            return list(self._fail_events)
 
     def record_span(
         self,
@@ -148,6 +179,7 @@ class TelemetryCollector:
         """Clears all buffered spans (useful for tests)."""
         with self._lock:
             self._spans.clear()
+            self._fail_events.clear()
             self._total_recorded_spans = 0
             self._total_tokens_consumed = 0
             self._total_estimated_cost = 0.0

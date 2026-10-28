@@ -2,7 +2,7 @@
 
 import logging
 from functools import lru_cache
-from typing import Annotated
+from typing import Annotated, Literal
 
 from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
@@ -70,6 +70,20 @@ class Settings(BaseSettings):
 
     trusted_proxies: Annotated[list[str], NoDecode] = Field(
         default_factory=list, validation_alias="TRUSTED_PROXIES"
+    )
+
+    # Fail-Open vs Fail-Closed Mode Configuration per Node
+    fail_mode_scope_classifier: Literal["open", "closed"] = Field(
+        default="closed", validation_alias="FAIL_MODE_SCOPE_CLASSIFIER"
+    )
+    fail_mode_faithfulness: Literal["open", "closed", "adaptive"] = Field(
+        default="adaptive", validation_alias="FAIL_MODE_FAITHFULNESS"
+    )
+    fail_mode_grader: Literal["open", "closed"] = Field(
+        default="closed", validation_alias="FAIL_MODE_GRADER"
+    )
+    fail_mode_router: Literal["open", "closed"] = Field(
+        default="open", validation_alias="FAIL_MODE_ROUTER"
     )
 
     @model_validator(mode="after")

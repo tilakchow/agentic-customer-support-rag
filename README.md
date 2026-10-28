@@ -126,6 +126,19 @@ Empirical quality, safety, and latency metrics are tracked in [`evals/SCOREBOARD
 
 ---
 
+## Failure behavior
+
+Each critical graph node has an explicit `FAIL_MODE` setting configuring how errors or timeouts from upstream providers (e.g., Groq, Pinecone, Tavily) are handled. Every fail event is recorded in telemetry with node name, mode, and error type.
+
+| Node | Setting | Default Mode | Behavior on Error / Timeout |
+| :--- | :--- | :---: | :--- |
+| **Scope Classifier** (`classify_scope`) | `FAIL_MODE_SCOPE_CLASSIFIER` | `closed` | Fails closed: routes immediately to `answer_insufficient` with a polite try-again notice and escalation hint, preventing unverified or out-of-scope requests from reaching downstream execution. When set to `open`, falls back to `in_scope`. |
+| **Router** (`route_question`) | `FAIL_MODE_ROUTER` | `open` | Fails open: routes to `kb` (retrieval path) so customer inquiries are backed by knowledge base evidence rather than dropped. When set to `closed`, falls back to `direct`. |
+| **Evidence Grader** (`grade_kb_evidence`, `grade_web_evidence`) | `FAIL_MODE_GRADER` | `closed` | Fails closed: treats evidence as `weak`, preventing unverified or low-confidence documents from generating hallucinations. |
+| **Faithfulness Check** (`check_claim_support`) | `FAIL_MODE_FAITHFULNESS` | `adaptive` | Fails closed (`supported=False`) for policy, warranty, and billing intents to prevent liability; fails open (`supported=True`) for generic inquiries. Can also be explicitly forced to `open` or `closed`. |
+
+---
+
 ## Getting Started
 
 ### Prerequisites

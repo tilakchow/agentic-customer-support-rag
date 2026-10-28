@@ -15,6 +15,15 @@ def agent_app():
     return create_agent()
 
 
+@pytest.fixture(autouse=True)
+def default_mock_classifier():
+    with patch("agenticrag.nodes.get_classifier_llm") as mock:
+        mock.return_value.ainvoke = AsyncMock(
+            return_value=ScopeDecision(scope="in_scope", reasoning="In scope test query")
+        )
+        yield mock
+
+
 @pytest.mark.asyncio
 async def test_e2e_direct_route(agent_app):
     """Direct route: greetings/chit-chat bypasses retrieval and generates direct answer."""

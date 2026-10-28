@@ -51,6 +51,7 @@ from agenticrag.routing import (
     get_latest_question,
     is_human_escalation_request,
     is_policy_sensitive_request,
+    is_proprietary_policy_query,
 )
 from agenticrag.schemas import ClaimSupportCheck, ScopeDecision
 from agenticrag.security import (
@@ -167,7 +168,28 @@ async def classify_scope(state: AgentState) -> dict[str, Any]:
     except Exception as e:
         record_provider_failure(e)
         logger.warning("[Scope Error] Classifier failed (query_len=%d): %s", len(question), e)
-        # Fail-safe default: allow query to proceed to router
+        settings = get_settings()
+        fail_mode = settings.fail_mode_scope_classifier
+        get_telemetry_collector().record_fail_decision(
+            node_name="scope_classifier",
+            error_type=type(e).__name__,
+            mode=fail_mode,
+            details=str(e),
+        )
+        if fail_mode == "closed":
+            # On error in closed mode, route to answer_insufficient with polite try-again + escalation hint
+            return {
+                "scope": "error_insufficient",
+                "current_query": question,
+                "ticket_payload": None,
+                "escalated": False,
+                "messages": [
+                    AIMessage(
+                        content="I apologize, but our system is currently experiencing a temporary issue processing your request. Please try again in a moment, or let us know if you would like to speak with a human support agent."
+                    )
+                ],
+                "source_used": "insufficient_evidence",
+            }
         scope = "in_scope"
 
     return {
@@ -239,11 +261,19 @@ async def route_question(state: AgentState) -> dict[str, Any]:
     except Exception as e:
         record_provider_failure(e)
         logger.warning(
-            "[Router Error] Failed to route query (query_len=%d). Falling back to 'kb': %s",
+            "[Router Error] Failed to route query (query_len=%d): %s",
             len(question),
             e,
         )
-        route = "kb"
+        settings = get_settings()
+        fail_mode = settings.fail_mode_router
+        get_telemetry_collector().record_fail_decision(
+            node_name="router",
+            error_type=type(e).__name__,
+            mode=fail_mode,
+            details=str(e),
+        )
+        route = "kb" if fail_mode == "open" else "direct"
 
     return {
         "current_query": question,
@@ -361,10 +391,17 @@ async def grade_kb_evidence(state: AgentState) -> dict[str, Any]:
         return {"kb_grade": grade.grade}
     except Exception as e:
         record_provider_failure(e)
-        logger.warning(
-            "[KB Grader Error] Failed to grade KB evidence. Falling back to 'weak': %s", e
+        logger.warning("[KB Grader Error] Failed to grade KB evidence: %s", e)
+        settings = get_settings()
+        fail_mode = settings.fail_mode_grader
+        get_telemetry_collector().record_fail_decision(
+            node_name="grader",
+            error_type=type(e).__name__,
+            mode=fail_mode,
+            details=str(e),
         )
-        return {"kb_grade": "weak"}
+        grade_val = "weak" if fail_mode == "closed" else "good"
+        return {"kb_grade": grade_val}
 
 
 try:
@@ -482,10 +519,17 @@ async def grade_web_evidence(state: AgentState) -> dict[str, Any]:
         return {"web_grade": grade.grade}
     except Exception as e:
         record_provider_failure(e)
-        logger.warning(
-            "[Web Grader Error] Failed to grade web evidence. Falling back to 'weak': %s", e
+        logger.warning("[Web Grader Error] Failed to grade web evidence: %s", e)
+        settings = get_settings()
+        fail_mode = settings.fail_mode_grader
+        get_telemetry_collector().record_fail_decision(
+            node_name="grader",
+            error_type=type(e).__name__,
+            mode=fail_mode,
+            details=str(e),
         )
-        return {"web_grade": "weak"}
+        grade_val = "weak" if fail_mode == "closed" else "good"
+        return {"web_grade": grade_val}
 
 
 def _message_text(response: Any) -> str:
@@ -605,6 +649,17 @@ async def check_claim_support(question: str, context: str, response: str) -> Cla
     """Evaluates whether all factual statements in the response are grounded in the reference context."""
     if not context or not response:
         return ClaimSupportCheck(supported=True, reason="Empty context or response.")
+
+    settings = get_settings()
+    is_policy_or_billing = is_proprietary_policy_query(question) or any(
+        k in question.lower()
+        for k in ("bill", "invoice", "refund", "charge", "payment", "policy", "warranty")
+    )
+    if settings.fail_mode_faithfulness == "adaptive":
+        effective_mode = "closed" if is_policy_or_billing else "open"
+    else:
+        effective_mode = settings.fail_mode_faithfulness
+
     try:
         prompt = CLAIM_SUPPORT_PROMPT_TEMPLATE.format(
             context=context[:3000],
@@ -614,8 +669,18 @@ async def check_claim_support(question: str, context: str, response: str) -> Cla
         decision: ClaimSupportCheck = await get_faithfulness_llm().ainvoke(prompt)
         return decision
     except Exception as e:
-        logger.debug("[Faithfulness Evaluation Skipped/Error]: %s", e)
-        return ClaimSupportCheck(supported=True, reason=f"Evaluator error: {e}")
+        record_provider_failure(e)
+        get_telemetry_collector().record_fail_decision(
+            node_name="faithfulness",
+            error_type=type(e).__name__,
+            mode=effective_mode,
+            details=str(e),
+        )
+        if effective_mode == "closed":
+            logger.warning("[Faithfulness Fail-Closed] Evaluator error for policy/billing: %s", e)
+            return ClaimSupportCheck(supported=False, reason=f"Evaluator error (fail-closed): {e}")
+        logger.debug("[Faithfulness Fail-Open] Evaluator error: %s", e)
+        return ClaimSupportCheck(supported=True, reason=f"Evaluator error (fail-open): {e}")
 
 
 async def generate_from_kb(state: AgentState) -> dict[str, Any]:
@@ -692,6 +757,12 @@ async def direct_answer(state: AgentState) -> dict[str, Any]:
 
 async def answer_insufficient(state: AgentState) -> dict[str, Any]:
     """Generates a polite notice when knowledge base and web searches cannot answer the customer inquiry."""
+    existing_messages = state.get("messages", [])
+    if existing_messages and state.get("scope") == "error_insufficient":
+        last_msg = existing_messages[-1]
+        if isinstance(last_msg, AIMessage) or (hasattr(last_msg, "type") and last_msg.type == "ai"):
+            return {"messages": [last_msg], "source_used": "insufficient_evidence"}
+
     question = get_latest_question(state)
     history = get_conversation_history(state)
     prompt = INSUFFICIENT_EVIDENCE_PROMPT_TEMPLATE.format(

@@ -16,6 +16,7 @@ from agenticrag.nodes import (
     search_web,
 )
 from agenticrag.routing import decide_after_kb_grade
+from agenticrag.schemas import ScopeDecision
 
 
 @pytest.mark.asyncio
@@ -300,9 +301,13 @@ async def test_checkpoint_db_sqlite(tmp_path):
         assert agent is not None
 
         with (
+            patch("agenticrag.nodes.get_classifier_llm") as mock_classifier,
             patch("agenticrag.nodes.get_router_llm") as mock_router,
             patch("agenticrag.nodes.get_llm") as mock_llm,
         ):
+            mock_classifier.return_value.ainvoke = AsyncMock(
+                return_value=ScopeDecision(scope="in_scope")
+            )
             mock_router.return_value.ainvoke = AsyncMock(return_value=RouteDecision(route="direct"))
             mock_llm.return_value.ainvoke = AsyncMock(
                 return_value=AIMessage(content="Hello! Support answer saved to sqlite.")
@@ -335,9 +340,13 @@ async def test_checkpoint_db_sqlite_persistence_across_sessions(tmp_path):
     async with aiosqlite.connect(db_file) as conn:
         agent = create_agent(checkpointer=AsyncSqliteSaver(conn))
         with (
+            patch("agenticrag.nodes.get_classifier_llm") as mock_classifier,
             patch("agenticrag.nodes.get_router_llm") as mock_router,
             patch("agenticrag.nodes.get_llm") as mock_llm,
         ):
+            mock_classifier.return_value.ainvoke = AsyncMock(
+                return_value=ScopeDecision(scope="in_scope")
+            )
             mock_router.return_value.ainvoke = AsyncMock(return_value=RouteDecision(route="direct"))
             mock_llm.return_value.ainvoke = AsyncMock(
                 return_value=AIMessage(content="Session 1 reply.")

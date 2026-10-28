@@ -63,6 +63,7 @@ def create_agent(checkpointer: Any = None):
             NodeName.ROUTE_QUESTION.value: NodeName.ROUTE_QUESTION.value,
             NodeName.REFUSE_OUT_OF_SCOPE.value: NodeName.REFUSE_OUT_OF_SCOPE.value,
             NodeName.ESCALATE_TO_HUMAN.value: NodeName.ESCALATE_TO_HUMAN.value,
+            NodeName.ANSWER_INSUFFICIENT.value: NodeName.ANSWER_INSUFFICIENT.value,
         },
     )
 

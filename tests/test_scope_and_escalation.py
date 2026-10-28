@@ -170,15 +170,30 @@ async def test_classify_scope_llm_invocation():
 
 
 @pytest.mark.asyncio
-async def test_classify_scope_fallback_on_llm_error():
-    """Validates fail-safe error handling when classifier LLM fails."""
+async def test_classify_scope_fallback_on_llm_error(monkeypatch):
+    """Validates fail-closed (default) and fail-open error handling when classifier LLM fails."""
+    import agenticrag.nodes as nodes_module
+    from agenticrag.config import Settings
+
     with patch("agenticrag.nodes.get_classifier_llm") as mock_classifier:
         mock_classifier.return_value.ainvoke = AsyncMock(side_effect=RuntimeError("LLM 503 error"))
 
-        res = await classify_scope(
+        # Default fail_mode_scope_classifier = "closed" -> routes to error_insufficient
+        closed_settings = Settings(fail_mode_scope_classifier="closed")
+        monkeypatch.setattr(nodes_module, "get_settings", lambda: closed_settings)
+        res_closed = await classify_scope(
             {"messages": [HumanMessage(content="I need help tracking my order")]}  # type: ignore[arg-type]
         )
-        assert res["scope"] == "in_scope"
+        assert res_closed["scope"] == "error_insufficient"
+        assert "messages" in res_closed
+
+        # Override fail_mode_scope_classifier = "open" -> routes to in_scope
+        open_settings = Settings(fail_mode_scope_classifier="open")
+        monkeypatch.setattr(nodes_module, "get_settings", lambda: open_settings)
+        res_open = await classify_scope(
+            {"messages": [HumanMessage(content="I need help tracking my order")]}  # type: ignore[arg-type]
+        )
+        assert res_open["scope"] == "in_scope"
 
 
 def test_decide_after_kb_grade_blocks_oos_from_web():

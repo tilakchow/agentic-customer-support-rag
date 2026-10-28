@@ -160,9 +160,11 @@ def is_allowed_web_fallback_query(query: str) -> bool:
 
 def route_after_scope(
     state: AgentState,
-) -> Literal["route_question", "refuse_out_of_scope", "escalate_to_human"]:
+) -> Literal["route_question", "refuse_out_of_scope", "escalate_to_human", "answer_insufficient"]:
     """Conditional edge decision after scope classification."""
     scope = state.get("scope", "in_scope")
+    if scope in ("error_insufficient", "insufficient"):
+        return NodeName.ANSWER_INSUFFICIENT.value
     if scope in ("needs_human", "policy_sensitive") or state.get("escalated", False):
         return NodeName.ESCALATE_TO_HUMAN.value
     if scope == "out_of_scope":
