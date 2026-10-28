@@ -40,6 +40,7 @@ def test_settings_allowed_origins_empty_string(monkeypatch):
 def test_settings_environment_from_env(monkeypatch):
     """ENVIRONMENT env var is correctly picked up."""
     monkeypatch.setenv("ENVIRONMENT", "production")
+    monkeypatch.setenv("JWT_SECRET", "a" * 32)
     s = Settings()
     assert s.environment == "production"
 
@@ -116,7 +117,13 @@ def test_settings_validate_runtime_keys_warns_when_missing(caplog):
 
 def test_settings_validate_runtime_keys_defaults_to_strict_in_production():
     """validate_runtime_keys defaults strict=True when environment is production."""
-    s = Settings(environment="production", groq_api_key="", tavily_api_key="", pinecone_api_key="")
+    s = Settings(
+        environment="production",
+        jwt_secret="a" * 32,
+        groq_api_key="",
+        tavily_api_key="",
+        pinecone_api_key="",
+    )
     with pytest.raises(RuntimeError, match="Missing required environment variables"):
         s.validate_runtime_keys()
 
@@ -135,6 +142,7 @@ def test_settings_allow_in_memory_checkpoints_defaults(monkeypatch):
     assert s_dev.allow_in_memory_checkpoints is True
 
     monkeypatch.setenv("ENVIRONMENT", "production")
+    monkeypatch.setenv("JWT_SECRET", "a" * 32)
     s_prod = Settings()
     assert s_prod.allow_in_memory_checkpoints is False
 
@@ -142,6 +150,7 @@ def test_settings_allow_in_memory_checkpoints_defaults(monkeypatch):
 def test_settings_allow_in_memory_checkpoints_override(monkeypatch):
     """Explicit ALLOW_IN_MEMORY_CHECKPOINTS overrides environment default."""
     monkeypatch.setenv("ENVIRONMENT", "production")
+    monkeypatch.setenv("JWT_SECRET", "a" * 32)
     monkeypatch.setenv("ALLOW_IN_MEMORY_CHECKPOINTS", "true")
     s = Settings()
     assert s.allow_in_memory_checkpoints is True

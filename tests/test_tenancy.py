@@ -58,8 +58,152 @@ def test_jwt_tampered_signature_rejection():
     token = create_jwt(payload)
     tampered = token[:-4] + "fake"
 
-    with pytest.raises(ValueError, match="signature verification failed"):
+    with pytest.raises(ValueError, match="JWT validation error:"):
         decode_jwt(tampered)
+
+
+def test_jwt_expired_token_rejection():
+    """Expired tokens must fail validation and return 401 on endpoints."""
+    from datetime import UTC, datetime, timedelta
+
+    import jwt
+
+    from agenticrag.config import get_settings
+
+    expired_payload = {
+        "sub": "user-expired",
+        "tenant_id": "tenant-corp",
+        "exp": datetime.now(UTC) - timedelta(hours=2),
+    }
+    expired_token = jwt.encode(expired_payload, get_settings().jwt_secret, algorithm="HS256")
+
+    with pytest.raises(ValueError, match="JWT validation error:.*expired"):
+        decode_jwt(expired_token)
+
+    client = TestClient(app)
+    resp = client.post(
+        "/chat",
+        json={"message": "hello", "thread_id": "exp-th"},
+        headers={"Authorization": f"Bearer {expired_token}"},
+    )
+    assert resp.status_code == 401
+    assert "Invalid or expired" in resp.json()["detail"]
+
+
+def test_jwt_wrong_algorithm_none_rejection():
+    """Rejects JWTs forged with 'none' or unauthorized algorithms."""
+    import jwt
+
+    # Token with alg="none"
+    unsecured_token = jwt.encode(
+        {"sub": "attacker", "tenant_id": "tenant-corp", "exp": 9999999999},
+        key="",
+        algorithm="none",
+    )
+    with pytest.raises(ValueError, match="JWT validation error:"):
+        decode_jwt(unsecured_token)
+
+
+def test_jwt_wrong_secret_rejection():
+    """Rejects JWTs signed with a different secret."""
+    import jwt
+
+    token = jwt.encode(
+        {"sub": "user-diff", "tenant_id": "tenant-corp", "exp": 9999999999},
+        key="completely-different-secret-key-32chars!",
+        algorithm="HS256",
+    )
+    with pytest.raises(ValueError, match="JWT validation error:"):
+        decode_jwt(token)
+
+
+def test_jwt_missing_exp_rejection():
+    """Rejects JWTs missing required 'exp' claim."""
+    import jwt
+
+    from agenticrag.config import get_settings
+
+    token = jwt.encode(
+        {"sub": "user-no-exp", "tenant_id": "tenant-corp"},
+        key=get_settings().jwt_secret,
+        algorithm="HS256",
+    )
+    with pytest.raises(ValueError, match="JWT validation error:.*exp"):
+        decode_jwt(token)
+
+
+def test_header_spoofing_attempt():
+    """Tenant and user must come from JWT, spoofed headers must be ignored."""
+    client = TestClient(app)
+
+    # Valid token for tenant-alpha / user-legit
+    token = create_jwt({"sub": "user-legit", "tenant_id": "tenant-alpha"})
+
+    # Attacker attempts to spoof X-Tenant-ID and X-User-ID headers
+    resp = client.post(
+        "/chat",
+        json={"message": "hello", "thread_id": "spoof-th-1"},
+        headers={
+            "Authorization": f"Bearer {token}",
+            "X-Tenant-ID": "malicious-tenant",
+            "X-User-ID": "malicious-user",
+        },
+    )
+    assert resp.status_code == 200
+
+    # Thread should be bound to tenant-alpha, not malicious-tenant
+    owner = get_tenancy_manager().storage.get_thread_owner("spoof-th-1")
+    assert owner is not None
+    tenant, user = owner
+    assert tenant == "tenant-alpha"
+    assert user == "user-legit"
+
+
+def test_production_weak_secret_startup_failure():
+    """In production, settings validation must raise ValueError if JWT_SECRET is unset or < 32 chars."""
+    from agenticrag.config import Settings
+
+    with pytest.raises(ValueError, match="JWT_SECRET must be set and at least 32 characters"):
+        Settings(environment="production", jwt_secret="")
+
+    with pytest.raises(ValueError, match="JWT_SECRET must be set and at least 32 characters"):
+        Settings(environment="production", jwt_secret="too-short")
+
+    # Valid 32-char secret passes
+    valid_settings = Settings(
+        environment="production", jwt_secret="a" * 32, allow_in_memory_checkpoints=True
+    )
+    assert valid_settings.jwt_secret == "a" * 32
+
+
+def test_redis_thread_tenancy_storage(monkeypatch):
+    """Verifies RedisThreadTenancyStorage binds and reads thread owners."""
+    from agenticrag.auth import RedisThreadTenancyStorage
+
+    mock_redis_client = MagicMock()
+    mock_store = {}
+
+    def fake_hsetnx(name, key, value):
+        if name not in mock_store:
+            mock_store[name] = {}
+        if key not in mock_store[name]:
+            mock_store[name][key] = value
+            return 1
+        return 0
+
+    def fake_hgetall(name):
+        return mock_store.get(name, {})
+
+    mock_redis_client.hsetnx = fake_hsetnx
+    mock_redis_client.hgetall = fake_hgetall
+    mock_redis_client.keys.return_value = []
+
+    storage = RedisThreadTenancyStorage(redis_url="redis://localhost:6379/0")
+    monkeypatch.setattr(storage, "_get_client", lambda: mock_redis_client)
+
+    storage.bind_thread("th-redis-1", "tenant-x", "user-y")
+    owner = storage.get_thread_owner("th-redis-1")
+    assert owner == ("tenant-x", "user-y")
 
 
 def test_tenant_namespace_resolution():

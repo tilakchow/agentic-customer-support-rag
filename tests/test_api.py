@@ -244,7 +244,7 @@ def test_production_environment_refuses_startup_without_api_key(monkeypatch):
     from agenticrag.api import app, lifespan
     from agenticrag.config import Settings
 
-    fake_settings = Settings(environment="production", api_key="")
+    fake_settings = Settings(environment="production", api_key="", jwt_secret="a" * 32)
     monkeypatch.setattr(api_module, "get_settings", lambda: fake_settings)
 
     async def run_lifespan():
@@ -334,6 +334,7 @@ def test_lifespan_refuses_in_memory_checkpointer_in_production(monkeypatch):
     prod_settings = Settings(
         environment="production",
         api_key="valid-key",
+        jwt_secret="a" * 32,
         groq_api_key="mock-groq",
         tavily_api_key="mock-tavily",
         pinecone_api_key="mock-pinecone",
@@ -366,6 +367,7 @@ def test_lifespan_allows_in_memory_checkpointer_with_flag(monkeypatch):
     prod_settings = Settings(
         environment="production",
         api_key="valid-key",
+        jwt_secret="a" * 32,
         groq_api_key="mock-groq",
         tavily_api_key="mock-tavily",
         pinecone_api_key="mock-pinecone",
@@ -394,6 +396,7 @@ def test_lifespan_refuses_startup_in_production_when_runtime_keys_missing(monkey
     prod_settings = Settings(
         environment="production",
         api_key="valid-key",
+        jwt_secret="a" * 32,
         groq_api_key="",
         tavily_api_key="",
         pinecone_api_key="",

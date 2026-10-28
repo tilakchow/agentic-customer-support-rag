@@ -61,9 +61,10 @@ class Settings(BaseSettings):
     rerank_model: str = Field(default="bge-reranker-v2-m3", validation_alias="RERANK_MODEL")
     rerank_fetch_k: int = Field(default=20, validation_alias="RERANK_FETCH_K")
     kb_version: str = Field(default="v2.1.0", validation_alias="KB_VERSION")
-    jwt_secret: str = Field(
-        default="dev-jwt-secret-key-agentic-rag-2026", validation_alias="JWT_SECRET"
-    )
+    jwt_secret: str = Field(default="", validation_alias="JWT_SECRET")
+    jwt_issuer: str | None = Field(default=None, validation_alias="JWT_ISSUER")
+    jwt_audience: str | None = Field(default=None, validation_alias="JWT_AUDIENCE")
+    allow_anonymous: bool | None = Field(default=None, validation_alias="ALLOW_ANONYMOUS")
     redis_url: str | None = Field(default=None, validation_alias="REDIS_URL")
     postgres_url: str | None = Field(default=None, validation_alias="POSTGRES_URL")
 
@@ -72,9 +73,29 @@ class Settings(BaseSettings):
     )
 
     @model_validator(mode="after")
-    def _set_checkpoint_defaults(self) -> "Settings":
+    def _set_auth_and_checkpoint_defaults(self) -> "Settings":
         if self.allow_in_memory_checkpoints is None:
             self.allow_in_memory_checkpoints = self.environment.lower() != "production"
+
+        if self.allow_anonymous is None:
+            self.allow_anonymous = self.environment.lower() != "production"
+
+        # Validate or initialize JWT_SECRET
+        if self.environment.lower() == "production":
+            if not self.jwt_secret or len(self.jwt_secret) < 32:
+                raise ValueError(
+                    "In production environment, JWT_SECRET must be set and at least 32 characters long."
+                )
+        elif not self.jwt_secret:
+            import secrets
+
+            # Generate random per-process secret in development
+            self.jwt_secret = secrets.token_hex(32)
+            logger.warning(
+                "[Auth] JWT_SECRET unset in %s; generated ephemeral per-process secret.",
+                self.environment,
+            )
+
         return self
 
     @field_validator("allowed_origins", "trusted_proxies", mode="before")

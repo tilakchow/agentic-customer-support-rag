@@ -4,15 +4,15 @@ Provides JWT user and tenant extraction, thread-to-user binding to prevent threa
 tenant-scoped Pinecone namespaces, and constant-time API key validation.
 """
 
-import base64
-import hashlib
 import hmac
-import json
 import logging
 import threading
+from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
+import jwt
 from fastapi import HTTPException, Request, Security, status
 from fastapi.security import APIKeyHeader
 
@@ -32,151 +32,249 @@ class AuthenticatedUser:
     role: str = "user"
 
 
-def _b64url_encode(data: bytes) -> str:
-    """Encodes bytes into URL-safe base64 string without trailing padding."""
-    return base64.urlsafe_b64encode(data).decode("utf-8").rstrip("=")
-
-
-def _b64url_decode(segment: str) -> bytes:
-    """Decodes a URL-safe base64 string handling variable padding."""
-    rem = len(segment) % 4
-    if rem > 0:
-        segment += "=" * (4 - rem)
-    return base64.urlsafe_b64decode(segment)
-
-
 def create_jwt(payload: dict[str, Any], secret: str | None = None) -> str:
-    """Creates a signed HMAC-SHA256 JWT string."""
+    """Creates a signed HMAC-SHA256 JWT string using PyJWT."""
+    settings = get_settings()
     if secret is None:
-        secret = get_settings().jwt_secret
+        secret = settings.jwt_secret
 
-    header = {"alg": "HS256", "typ": "JWT"}
-    hdr_b64 = _b64url_encode(json.dumps(header, separators=(",", ":")).encode("utf-8"))
-    payload_b64 = _b64url_encode(json.dumps(payload, separators=(",", ":")).encode("utf-8"))
-    signing_input = f"{hdr_b64}.{payload_b64}"
+    claims = dict(payload)
+    if "exp" not in claims:
+        # Default 1 hour expiry if not specified
+        claims["exp"] = datetime.now(UTC) + timedelta(hours=1)
+    if "iat" not in claims:
+        claims["iat"] = datetime.now(UTC)
+    if settings.jwt_issuer and "iss" not in claims:
+        claims["iss"] = settings.jwt_issuer
+    if settings.jwt_audience and "aud" not in claims:
+        claims["aud"] = settings.jwt_audience
 
-    signature = hmac.new(
-        secret.encode("utf-8"), signing_input.encode("utf-8"), hashlib.sha256
-    ).digest()
-    sig_b64 = _b64url_encode(signature)
-    return f"{signing_input}.{sig_b64}"
+    return jwt.encode(claims, secret, algorithm="HS256")
 
 
 def decode_jwt(
     token: str, secret: str | None = None, verify_signature: bool = True
 ) -> dict[str, Any]:
-    """Decodes and validates a signed HMAC-SHA256 JWT string."""
+    """Decodes and validates a signed HMAC-SHA256 JWT string using PyJWT."""
+    settings = get_settings()
     if secret is None:
-        secret = get_settings().jwt_secret
+        secret = settings.jwt_secret
 
-    parts = token.split(".")
-    if len(parts) != 3:
-        raise ValueError("Invalid JWT structure: token must contain 3 dot-separated parts.")
+    options = {
+        "verify_signature": verify_signature,
+        "require": ["exp"],
+        "verify_exp": True,
+    }
 
-    hdr_b64, payload_b64, sig_b64 = parts
-    signing_input = f"{hdr_b64}.{payload_b64}"
+    kwargs: dict[str, Any] = {
+        "algorithms": ["HS256"],  # Require HS256 only (rejects 'none' and other algs)
+        "options": options,
+        "leeway": 10,  # small leeway for clock skew
+    }
+    if settings.jwt_issuer:
+        kwargs["issuer"] = settings.jwt_issuer
+    if settings.jwt_audience:
+        kwargs["audience"] = settings.jwt_audience
 
-    if verify_signature and secret:
-        expected_sig = hmac.new(
-            secret.encode("utf-8"), signing_input.encode("utf-8"), hashlib.sha256
-        ).digest()
-        provided_sig = _b64url_decode(sig_b64)
-        if not hmac.compare_digest(expected_sig, provided_sig):
-            raise ValueError("JWT signature verification failed.")
-
-    payload_json = _b64url_decode(payload_b64).decode("utf-8")
-    return json.loads(payload_json)
+    try:
+        return jwt.decode(token, secret, **kwargs)
+    except jwt.PyJWTError as e:
+        raise ValueError(f"JWT validation error: {e}") from e
 
 
 async def get_authenticated_user(request: Request) -> AuthenticatedUser:
-    """Extracts authenticated user and tenant identity from Bearer JWT or headers."""
+    """Extracts authenticated user and tenant identity from Bearer JWT only.
+
+    Header fallback (X-Tenant-ID / X-User-ID) is removed. If ALLOW_ANONYMOUS is
+    enabled and no token is supplied, tenant 'default' and user 'anonymous' are returned.
+    Invalid or expired tokens always return 401.
+    """
     settings = get_settings()
-
-    auth_header = request.headers.get("Authorization", "")
-    tenant_header = request.headers.get("X-Tenant-ID", "")
-    user_header = request.headers.get("X-User-ID", "")
-
-    user_id = user_header or "anonymous"
-    tenant_id = tenant_header or "default"
-    role = "user"
+    auth_header = request.headers.get("Authorization", "").strip()
 
     if auth_header.startswith("Bearer "):
         token = auth_header[7:].strip()
         try:
-            payload = decode_jwt(
-                token, secret=settings.jwt_secret, verify_signature=bool(settings.jwt_secret)
-            )
-            user_id = payload.get("sub") or payload.get("user_id") or user_id
-            tenant_id = payload.get("tenant_id") or payload.get("org_id") or tenant_id
+            payload = decode_jwt(token, secret=settings.jwt_secret, verify_signature=True)
+            user_id = payload.get("sub") or payload.get("user_id")
+            tenant_id = payload.get("tenant_id") or payload.get("org_id")
             role = payload.get("role", "user")
+
+            if not user_id or not tenant_id:
+                raise ValueError("JWT must contain user identifier ('sub') and 'tenant_id'.")
+
+            return AuthenticatedUser(user_id=str(user_id), tenant_id=str(tenant_id), role=str(role))
         except Exception as e:
-            logger.debug("[Auth] JWT validation failed, falling back to header/anonymous: %s", e)
-            if settings.require_api_key:
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail=f"Invalid authentication token: {e}",
-                ) from e
+            logger.warning("[Auth] JWT verification failed: %s", e)
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail=f"Invalid or expired authentication token: {e}",
+            ) from e
 
-    return AuthenticatedUser(user_id=user_id, tenant_id=tenant_id, role=role)
+    # No Bearer token supplied: check if anonymous access is explicitly allowed
+    if settings.allow_anonymous:
+        # Per-session anonymous thread ownership is generated from client IP / session
+        client_host = request.client.host if request.client else "local"
+        anon_user_id = f"anon-{client_host}"
+        return AuthenticatedUser(user_id=anon_user_id, tenant_id="default", role="anonymous")
+
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Missing required Bearer authentication token.",
+    )
 
 
-class ThreadTenancyManager:
-    """Thread-safe in-memory binding of conversation threads to tenants and users."""
+class BaseThreadTenancyStorage(ABC):
+    """Abstract interface for thread ownership storage."""
+
+    @abstractmethod
+    def bind_thread(self, thread_id: str, tenant_id: str, user_id: str) -> None:
+        """Binds a thread_id to tenant_id and user_id."""
+        pass
+
+    @abstractmethod
+    def get_thread_owner(self, thread_id: str) -> tuple[str, str] | None:
+        """Returns (tenant_id, user_id) tuple or None."""
+        pass
+
+    @abstractmethod
+    def reset(self) -> None:
+        """Resets storage."""
+        pass
+
+
+class InMemoryThreadTenancyStorage(BaseThreadTenancyStorage):
+    """Thread-safe in-memory thread tenancy storage."""
 
     def __init__(self):
         self._lock = threading.Lock()
-        self._thread_owners: dict[str, tuple[str, str]] = {}  # thread_id -> (tenant_id, user_id)
+        self._thread_owners: dict[str, tuple[str, str]] = {}
 
     def bind_thread(self, thread_id: str, tenant_id: str, user_id: str) -> None:
-        """Binds a thread_id to a specific tenant and user upon thread creation."""
         with self._lock:
             if thread_id not in self._thread_owners:
                 self._thread_owners[thread_id] = (tenant_id, user_id)
 
-    def verify_thread_access(self, thread_id: str, tenant_id: str, user_id: str) -> None:
-        """Validates that the requester has ownership of the given thread_id."""
+    def get_thread_owner(self, thread_id: str) -> tuple[str, str] | None:
         with self._lock:
-            owner = self._thread_owners.get(thread_id)
-            if not owner:
-                # First time seeing this thread, register ownership
-                self._thread_owners[thread_id] = (tenant_id, user_id)
-                return
-
-            registered_tenant, registered_user = owner
-
-            # Cross-tenant access is strictly prohibited
-            if (
-                registered_tenant != tenant_id
-                and registered_tenant != "default"
-                and tenant_id != "default"
-            ):
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail="Cross-tenant thread access forbidden.",
-                )
-
-            # Cross-user access check (unless anonymous or admin)
-            if (
-                registered_user != "anonymous"
-                and user_id != "anonymous"
-                and registered_user != user_id
-            ):
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail="Cross-user thread access forbidden.",
-                )
+            return self._thread_owners.get(thread_id)
 
     def reset(self) -> None:
-        """Clears all thread bindings for test isolation."""
         with self._lock:
             self._thread_owners.clear()
 
 
-_tenancy_manager = ThreadTenancyManager()
+class RedisThreadTenancyStorage(BaseThreadTenancyStorage):
+    """Redis-backed thread tenancy storage used when REDIS_URL is configured."""
+
+    def __init__(self, redis_url: str):
+        self.redis_url = redis_url
+        self._client: Any = None
+        self._fallback = InMemoryThreadTenancyStorage()
+
+    def _get_client(self) -> Any:
+        if self._client is None:
+            try:
+                import redis
+
+                self._client = redis.Redis.from_url(self.redis_url, decode_responses=True)
+            except Exception as e:
+                logger.warning(
+                    "[Redis Tenancy] Failed to connect to Redis (%s), falling back to in-memory: %s",
+                    self.redis_url,
+                    e,
+                )
+                return None
+        return self._client
+
+    def bind_thread(self, thread_id: str, tenant_id: str, user_id: str) -> None:
+        client = self._get_client()
+        if client:
+            try:
+                client.hsetnx(f"thread_owner:{thread_id}", "tenant_id", tenant_id)
+                client.hsetnx(f"thread_owner:{thread_id}", "user_id", user_id)
+                return
+            except Exception as e:
+                logger.warning("[Redis Tenancy] Error binding thread: %s", e)
+        self._fallback.bind_thread(thread_id, tenant_id, user_id)
+
+    def get_thread_owner(self, thread_id: str) -> tuple[str, str] | None:
+        client = self._get_client()
+        if client:
+            try:
+                data = client.hgetall(f"thread_owner:{thread_id}")
+                if data and "tenant_id" in data and "user_id" in data:
+                    return (data["tenant_id"], data["user_id"])
+            except Exception as e:
+                logger.warning("[Redis Tenancy] Error reading thread: %s", e)
+        return self._fallback.get_thread_owner(thread_id)
+
+    def reset(self) -> None:
+        self._fallback.reset()
+        client = self._get_client()
+        if client:
+            try:
+                keys = client.keys("thread_owner:*")
+                if keys:
+                    client.delete(*keys)
+            except Exception as e:
+                logger.warning("[Redis Tenancy] Error resetting: %s", e)
+
+
+class ThreadTenancyManager:
+    """Manages thread ownership across tenants and users backed by modular storage."""
+
+    def __init__(self, storage: BaseThreadTenancyStorage | None = None):
+        self.storage = storage or InMemoryThreadTenancyStorage()
+
+    def bind_thread(self, thread_id: str, tenant_id: str, user_id: str) -> None:
+        self.storage.bind_thread(thread_id, tenant_id, user_id)
+
+    def verify_thread_access(self, thread_id: str, tenant_id: str, user_id: str) -> None:
+        """Validates that the requester has ownership of the given thread_id."""
+        owner = self.storage.get_thread_owner(thread_id)
+        if not owner:
+            # First time seeing this thread: register ownership
+            self.storage.bind_thread(thread_id, tenant_id, user_id)
+            return
+
+        registered_tenant, registered_user = owner
+
+        # Cross-tenant access is strictly forbidden
+        if (
+            registered_tenant != tenant_id
+            and registered_tenant != "default"
+            and tenant_id != "default"
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Cross-tenant thread access forbidden.",
+            )
+
+        # Cross-user access check: anonymous users are bound per session user_id
+        if registered_user != user_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Cross-user thread access forbidden.",
+            )
+
+    def reset(self) -> None:
+        self.storage.reset()
+
+
+_tenancy_manager: ThreadTenancyManager | None = None
 
 
 def get_tenancy_manager() -> ThreadTenancyManager:
-    """Returns singleton ThreadTenancyManager."""
+    """Returns singleton ThreadTenancyManager with Redis or in-memory backend."""
+    global _tenancy_manager
+    if _tenancy_manager is None:
+        settings = get_settings()
+        if settings.redis_url:
+            storage: BaseThreadTenancyStorage = RedisThreadTenancyStorage(settings.redis_url)
+        else:
+            storage = InMemoryThreadTenancyStorage()
+        _tenancy_manager = ThreadTenancyManager(storage)
     return _tenancy_manager
 
 
