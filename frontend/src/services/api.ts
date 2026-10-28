@@ -14,6 +14,13 @@ export interface HealthResponse {
   service: string
 }
 
+export interface CitationSource {
+  doc_id: string
+  intent?: string
+  score?: number
+  content: string
+}
+
 export interface StreamEvent {
   type: "status" | "token" | "done" | "error"
   node?: string
@@ -22,13 +29,21 @@ export interface StreamEvent {
   thread_id?: string
   source_used?: string
   full_content?: string
+  sources?: CitationSource[]
+  ticket_payload?: Record<string, any>
   error?: string
 }
 
 export interface StreamCallbacks {
   onStatus?: (message: string, node?: string) => void
   onToken?: (token: string) => void
-  onDone?: (data: { thread_id: string; source_used?: string; full_content?: string }) => void
+  onDone?: (data: {
+    thread_id: string
+    source_used?: string
+    full_content?: string
+    sources?: CitationSource[]
+    ticket_payload?: Record<string, any>
+  }) => void
   onError?: (error: string) => void
 }
 
@@ -94,6 +109,8 @@ export async function streamMessage(
                 thread_id: event.thread_id || "",
                 source_used: event.source_used,
                 full_content: event.full_content,
+                sources: event.sources,
+                ticket_payload: event.ticket_payload,
               })
             } else if (event.type === "error" && callbacks.onError) {
               terminalReceived = true

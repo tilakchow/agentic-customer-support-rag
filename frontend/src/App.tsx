@@ -1,26 +1,56 @@
 import React, { useState, useEffect, useRef } from "react"
-import { Paperclip, ChevronDown, Send, Loader2, AlertCircle } from "lucide-react"
-import { Header } from "./components/Header"
-import { Sidebar, NavTab } from "./components/Sidebar"
-import { WelcomeSection } from "./components/WelcomeSection"
+import { AppSidebar } from "./components/AppSidebar"
+import { WelcomeHero } from "./components/WelcomeHero"
 import { ChatMessage, MessageItem } from "./components/ChatMessage"
-import { WorkflowPanel } from "./components/WorkflowPanel"
+import { Composer } from "./components/Composer"
+import { StreamingTimeline } from "./components/StreamingTimeline"
+import { ErrorBanner } from "./components/ErrorBanner"
+import { Dialog } from "./components/ui/Dialog"
 import { KBView } from "./components/views/KBView"
-import { HistoryView, SavedThread } from "./components/views/HistoryView"
 import { SettingsView } from "./components/views/SettingsView"
+import { SavedThread } from "./components/views/HistoryView"
 import { ErrorBoundary } from "./components/ErrorBoundary"
 import { useThreads } from "./hooks/useThreads"
 import { useChatStream } from "./hooks/useChatStream"
 import { checkHealth } from "./services/api"
+import { Search, Copy, Check, PanelLeft } from "lucide-react"
 
 export function AppContent() {
   const [messages, setMessages] = useState<MessageItem[]>([])
   const [input, setInput] = useState("")
-  const [showWorkflow, setShowWorkflow] = useState(true)
-  const [activeTab, setActiveTab] = useState<NavTab>("chat")
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+  const [kbDialogOpen, setKbDialogOpen] = useState(false)
+  const [settingsDialogOpen, setSettingsDialogOpen] = useState(false)
   const [searchFilter, setSearchFilter] = useState("")
   const [showSearch, setShowSearch] = useState(false)
   const [backendOnline, setBackendOnline] = useState(false)
+  const [copiedThread, setCopiedThread] = useState(false)
+
+  // Theme setup: defaults to system preference, toggleable
+  const [theme, setTheme] = useState<"light" | "dark">(() => {
+    try {
+      const stored = localStorage.getItem("kalyx_theme")
+      if (stored === "dark" || stored === "light") return stored
+      return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"
+    } catch {
+      return "light"
+    }
+  })
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("kalyx_theme", theme)
+    } catch {}
+    if (theme === "dark") {
+      document.documentElement.classList.add("dark")
+    } else {
+      document.documentElement.classList.remove("dark")
+    }
+  }, [theme])
+
+  const toggleTheme = () => {
+    setTheme((prev) => (prev === "dark" ? "light" : "dark"))
+  }
 
   const {
     threadId,
@@ -29,7 +59,6 @@ export function AppContent() {
     createNewThread,
     resumeThread,
     deleteThread,
-    clearAllThreads,
     clearStorage,
     recordMessages,
   } = useThreads()
@@ -46,16 +75,15 @@ export function AppContent() {
   } = useChatStream({ threadId })
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
-  const textareaRef = useRef<HTMLTextAreaElement>(null)
 
-  // Sync messages to current thread
+  // Sync messages with saved threads in storage
   useEffect(() => {
     recordMessages(threadId, messages)
   }, [messages, threadId, recordMessages])
 
   // Periodic health check
   useEffect(() => {
-    const verifyHealth = async () => {
+    const verify = async () => {
       try {
         await checkHealth()
         setBackendOnline(true)
@@ -63,10 +91,9 @@ export function AppContent() {
         setBackendOnline(false)
       }
     }
-
-    verifyHealth()
-    const interval = setInterval(verifyHealth, 10000)
-    return () => clearInterval(interval)
+    verify()
+    const timer = setInterval(verify, 12000)
+    return () => clearInterval(timer)
   }, [])
 
   // Auto scroll to bottom
@@ -75,39 +102,33 @@ export function AppContent() {
   }
 
   useEffect(() => {
-    if (activeTab === "chat") {
-      scrollToBottom()
-    }
-  }, [messages, loading, statusMessage, activeTab])
+    scrollToBottom()
+  }, [messages, loading, statusMessage])
 
-  // Handle New Chat
+  // New Chat action
   const handleNewChat = () => {
     abortStream()
     createNewThread()
     setMessages([])
     setErrorMsg(null)
     setInput("")
-    setActiveTab("chat")
     setShowSearch(false)
     setSearchFilter("")
   }
 
-  // Resume past thread from History view
+  // Resume thread
   const handleResumeThread = (thread: SavedThread) => {
     abortStream()
     resumeThread(thread)
     setMessages(thread.messages)
-    setActiveTab("chat")
   }
 
-  // Send message with streaming
+  // Send message
   const handleSend = async (textToSend?: string) => {
     const query = (textToSend || input).trim()
     if (!query || loading) return
 
-    setActiveTab("chat")
     setErrorMsg(null)
-
     const userTimestamp = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
     const userMsg: MessageItem = {
       id: crypto.randomUUID(),
@@ -127,252 +148,253 @@ export function AppContent() {
     setMessages((prev) => [...prev, userMsg, initialAssistantMsg])
     setInput("")
 
-    if (textareaRef.current) {
-      textareaRef.current.style.height = "auto"
-    }
-
     await startStream(query, threadId, {
       onToken: (token) => {
         setMessages((prev) =>
-          prev.map((msg) =>
-            msg.id === assistantId ? { ...msg, content: msg.content + token } : msg
-          )
+          prev.map((m) => (m.id === assistantId ? { ...m, content: m.content + token } : m))
         )
       },
       onDone: (data) => {
         setMessages((prev) =>
-          prev.map((msg) => {
-            if (msg.id === assistantId) {
+          prev.map((m) => {
+            if (m.id === assistantId) {
               return {
-                ...msg,
-                content: msg.content || data.full_content || "",
+                ...m,
+                content: m.content || data.full_content || "",
                 source: data.source_used,
+                sources: data.sources,
               }
             }
-            return msg
+            return m
           })
         )
         if (data.thread_id && data.thread_id !== threadId) {
           setThreadId(data.thread_id)
         }
       },
-      onError: () => {
-        setMessages((prev) => prev.filter((msg) => msg.id !== assistantId || msg.content.length > 0))
+      onError: (_err) => {
+        setMessages((prev) => prev.filter((m) => m.id !== assistantId || m.content.length > 0))
       },
     })
   }
 
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault()
-      handleSend()
+  // Regenerate last response
+  const handleRegenerate = () => {
+    const lastUserMsg = [...messages].reverse().find((m) => m.role === "user")
+    if (lastUserMsg) {
+      handleSend(lastUserMsg.content)
     }
   }
 
-  const handleTextareaChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    setInput(e.target.value)
-    e.target.style.height = "auto"
-    e.target.style.height = `${Math.min(e.target.scrollHeight, 140)}px`
+  const copyThreadId = () => {
+    navigator.clipboard.writeText(threadId)
+    setCopiedThread(true)
+    setTimeout(() => setCopiedThread(false), 2000)
   }
 
-  // Filter messages if search is active
+  // Message search filter
   const displayedMessages = searchFilter
     ? messages.filter((m) => m.content.toLowerCase().includes(searchFilter.toLowerCase()))
     : messages
 
   return (
-    <div className="flex flex-col h-screen w-screen bg-[#f8fafc] text-slate-900 font-sans overflow-hidden">
-      {/* Top Header */}
-      <Header
-        threadId={threadId}
-        backendOnline={backendOnline}
-        showWorkflow={showWorkflow}
-        onToggleWorkflow={() => setShowWorkflow((prev) => !prev)}
+    <div className="flex h-screen w-screen bg-[var(--color-canvas)] text-[var(--color-ink)] overflow-hidden font-sans">
+      {/* Perplexity-style Minimal Collapsible Sidebar */}
+      <AppSidebar
+        collapsed={sidebarCollapsed}
+        onToggleCollapse={() => setSidebarCollapsed((prev) => !prev)}
+        currentThreadId={threadId}
+        threads={savedThreads}
+        onSelectThread={handleResumeThread}
+        onDeleteThread={deleteThread}
         onNewChat={handleNewChat}
-        onSearchClick={() => {
-          if (activeTab !== "chat") setActiveTab("chat")
-          setShowSearch((prev) => !prev)
-        }}
+        onOpenKB={() => setKbDialogOpen(true)}
+        onOpenSettings={() => setSettingsDialogOpen(true)}
+        theme={theme}
+        onToggleTheme={toggleTheme}
       />
 
-      {/* Main Workspace with Slim Sidebar */}
-      <div className="flex-1 flex overflow-hidden">
-        {/* Slim Left Sidebar */}
-        <Sidebar
-          activeTab={activeTab}
-          onSelectTab={(tab) => setActiveTab(tab)}
-          onHelpClick={() => {
-            handleSend("What topics and customer support procedures are in your knowledge base?")
+      {/* Main Single Centered Reading Column Workspace */}
+      <div className="flex-1 flex flex-col h-full overflow-hidden relative">
+        {/* Subtle Top Header */}
+        <header className="h-12 border-b border-[var(--color-border-subtle)] px-4 flex items-center justify-between bg-[var(--color-canvas)] select-none shrink-0 z-10">
+          <div className="flex items-center gap-2">
+            {sidebarCollapsed && (
+              <button
+                type="button"
+                onClick={() => setSidebarCollapsed(false)}
+                className="p-1.5 rounded-[var(--radius-sm)] text-[var(--color-ink-muted)] hover:text-[var(--color-ink)] hover:bg-[var(--color-surface-hover)] transition-colors cursor-pointer"
+                aria-label="Expand navigation rail"
+              >
+                <PanelLeft className="w-4 h-4" />
+              </button>
+            )}
+            <span className="text-[13px] font-semibold text-[var(--color-ink)]">
+              Kalyx Support
+            </span>
+            <span
+              className={`w-2 h-2 rounded-full ${
+                backendOnline ? "bg-[var(--color-success)]" : "bg-amber-500"
+              }`}
+              title={backendOnline ? "FastAPI Connected" : "FastAPI Offline"}
+            />
+          </div>
+
+          <div className="flex items-center gap-2">
+            {/* Search within conversation */}
+            <button
+              type="button"
+              onClick={() => setShowSearch((prev) => !prev)}
+              className="p-1.5 rounded-[var(--radius-sm)] text-[var(--color-ink-muted)] hover:text-[var(--color-ink)] hover:bg-[var(--color-surface-hover)] transition-colors cursor-pointer"
+              aria-label="Search conversation messages"
+              title="Search conversation"
+            >
+              <Search className="w-4 h-4" />
+            </button>
+
+            {/* Session Thread ID Pill */}
+            <button
+              type="button"
+              onClick={copyThreadId}
+              className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-[var(--radius-full)] bg-[var(--color-surface)] border border-[var(--color-border)] text-[11px] font-mono text-[var(--color-ink-muted)] hover:border-[var(--color-brand)] transition-colors cursor-pointer"
+              aria-label="Copy active thread identifier"
+              title="Copy Thread ID"
+            >
+              <span className="text-[var(--color-ink-faint)]">thread:</span>
+              <span>{threadId.slice(0, 8)}...</span>
+              {copiedThread ? (
+                <Check className="w-3 h-3 text-[var(--color-success)]" />
+              ) : (
+                <Copy className="w-3 h-3 text-[var(--color-ink-faint)]" />
+              )}
+            </button>
+          </div>
+        </header>
+
+        {/* In-chat search filter bar */}
+        {showSearch && (
+          <div className="px-4 py-2 border-b border-[var(--color-border-subtle)] bg-[var(--color-surface)] flex items-center justify-between text-[12px]">
+            <input
+              type="text"
+              value={searchFilter}
+              onChange={(e) => setSearchFilter(e.target.value)}
+              placeholder="Find keywords in this thread..."
+              className="flex-1 max-w-sm px-2.5 py-1 rounded-[var(--radius-sm)] bg-[var(--color-canvas)] border border-[var(--color-border)] text-[12.5px] text-[var(--color-ink)] focus:outline-none focus:border-[var(--color-brand)]"
+            />
+            <button
+              type="button"
+              onClick={() => {
+                setSearchFilter("")
+                setShowSearch(false)
+              }}
+              className="text-[11.5px] text-[var(--color-ink-muted)] hover:text-[var(--color-ink)] cursor-pointer"
+            >
+              Close
+            </button>
+          </div>
+        )}
+
+        {/* Scrollable Center Reading Column (Capped at 840px max-width) */}
+        <main className="flex-1 overflow-y-auto px-4 sm:px-6 py-6">
+          <div className="max-w-[840px] mx-auto min-h-full flex flex-col justify-between">
+            {/* Error Banner */}
+            {errorMsg && (
+              <ErrorBanner
+                message={errorMsg}
+                onRetry={handleRegenerate}
+                onDismiss={() => setErrorMsg(null)}
+              />
+            )}
+
+            {/* Empty State vs Chat Thread */}
+            {messages.length === 0 ? (
+              <div className="my-auto">
+                <WelcomeHero onSelectQuery={(q) => handleSend(q)} />
+              </div>
+            ) : (
+              <div className="flex-1 flex flex-col pb-6">
+                {displayedMessages.map((msg, idx) => {
+                  if (msg.role === "assistant" && !msg.content && loading) {
+                    return null
+                  }
+                  const isLastAssistant =
+                    msg.role === "assistant" && idx === displayedMessages.length - 1
+                  return (
+                    <ChatMessage
+                      key={msg.id}
+                      message={msg}
+                      isLastAssistant={isLastAssistant}
+                      onRegenerate={handleRegenerate}
+                    />
+                  )
+                })}
+
+                {/* Streaming status timeline */}
+                {loading && (
+                  <StreamingTimeline
+                    activeNode={activeNode}
+                    visitedNodes={visitedNodes}
+                    statusMessage={statusMessage}
+                  />
+                )}
+                <div ref={messagesEndRef} />
+              </div>
+            )}
+          </div>
+        </main>
+
+        {/* Prominent Composer Area at Bottom */}
+        <footer className="p-4 sm:p-5 bg-[var(--color-canvas)] border-t border-[var(--color-border-subtle)] shrink-0">
+          <div className="max-w-[840px] mx-auto">
+            <Composer
+              input={input}
+              onChange={setInput}
+              onSend={handleSend}
+              onStop={abortStream}
+              loading={loading}
+              maxLength={1500}
+            />
+          </div>
+        </footer>
+      </div>
+
+      {/* Secondary Knowledge Base Inspector Dialog */}
+      <Dialog
+        open={kbDialogOpen}
+        onClose={() => setKbDialogOpen(false)}
+        title="Knowledge Base & Vector Index"
+        description="Inspect Pinecone embeddings and query raw policy chunks"
+        maxWidth="max-w-2xl"
+      >
+        <KBView
+          onAskInChat={(query) => {
+            setKbDialogOpen(false)
+            handleSend(query)
           }}
         />
+      </Dialog>
 
-        {/* Central Dynamic Content Area */}
-        <div className="flex-1 flex overflow-hidden">
-          {/* TAB 1: Chat View */}
-          {activeTab === "chat" && (
-            <div className="flex-1 flex flex-col justify-between overflow-hidden relative">
-              {/* Optional Search Bar in Chat */}
-              {showSearch && (
-                <div className="px-6 py-2.5 bg-blue-50/70 border-b border-blue-100 flex items-center justify-between text-xs">
-                  <div className="flex items-center gap-2 flex-1 max-w-md">
-                    <span className="text-slate-500 font-medium">Find in conversation:</span>
-                    <input
-                      type="text"
-                      value={searchFilter}
-                      onChange={(e) => setSearchFilter(e.target.value)}
-                      placeholder="Type keywords..."
-                      className="px-2.5 py-1 rounded-lg bg-white border border-slate-300 text-xs focus:outline-none focus:border-blue-500 flex-1"
-                    />
-                  </div>
-                  <button
-                    onClick={() => {
-                      setSearchFilter("")
-                      setShowSearch(false)
-                    }}
-                    className="text-slate-400 hover:text-slate-700 text-xs font-medium cursor-pointer"
-                  >
-                    Close
-                  </button>
-                </div>
-              )}
-
-              {/* Scrollable Message Viewport */}
-              <main className="flex-1 overflow-y-auto px-4 md:px-8 py-5">
-                <div className="max-w-3xl mx-auto flex flex-col min-h-full">
-                  {/* Error Banner */}
-                  {errorMsg && (
-                    <div className="mb-4 flex items-center gap-2 p-3 rounded-xl border border-red-200 bg-red-50 text-red-700 text-xs">
-                      <AlertCircle className="w-4 h-4 shrink-0 text-red-600" />
-                      <span className="flex-1">{errorMsg}</span>
-                      <button
-                        onClick={() => setErrorMsg(null)}
-                        className="text-red-500 hover:text-red-800 text-[11px] underline cursor-pointer"
-                      >
-                        Dismiss
-                      </button>
-                    </div>
-                  )}
-
-                  {/* Welcome section: visible only before conversation starts */}
-                  {messages.length === 0 ? (
-                    <div className="my-auto py-4">
-                      <WelcomeSection onSelectQuery={(query) => handleSend(query)} />
-                    </div>
-                  ) : (
-                    <div className="flex-1 flex flex-col pb-6">
-                      {displayedMessages.map((msg) => {
-                        if (msg.role === "assistant" && !msg.content && loading) {
-                          return null
-                        }
-                        return <ChatMessage key={msg.id} message={msg} />
-                      })}
-
-                      {/* Live streaming status card */}
-                      {loading && statusMessage && (
-                        <div className="flex items-center gap-3 p-3 mb-4 rounded-xl border border-slate-200/90 bg-white shadow-2xs max-w-sm text-slate-700 text-xs ml-11">
-                          <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-600 shrink-0" />
-                          <span className="font-medium">{statusMessage}</span>
-                        </div>
-                      )}
-                      <div ref={messagesEndRef} />
-                    </div>
-                  )}
-                </div>
-              </main>
-
-              {/* Bottom Input Area */}
-              <div className="p-4 bg-gradient-to-t from-[#f8fafc] via-[#f8fafc]/90 to-transparent">
-                <div className="max-w-3xl mx-auto">
-                  <div className="flex items-center gap-2 rounded-2xl border border-slate-300/90 bg-white px-3.5 py-2 shadow-xs focus-within:border-blue-500 focus-within:ring-1 focus-within:ring-blue-500 transition-all">
-                    {/* Attachment button */}
-                    <button
-                      type="button"
-                      onClick={() => {
-                        handleSend("How do I upload or reference custom order receipts?")
-                      }}
-                      className="p-1 text-slate-400 hover:text-slate-700 rounded transition-colors cursor-pointer shrink-0"
-                      title="Attach file / receipts"
-                    >
-                      <Paperclip className="w-4 h-4" />
-                    </button>
-
-                    {/* Textarea input */}
-                    <textarea
-                      ref={textareaRef}
-                      rows={1}
-                      value={input}
-                      onChange={handleTextareaChange}
-                      onKeyDown={handleKeyDown}
-                      placeholder="Ask a support question or search the knowledge base..."
-                      className="flex-1 resize-none bg-transparent px-2 py-1 text-[13.5px] text-slate-900 placeholder-slate-400 focus:outline-none max-h-32 leading-relaxed"
-                    />
-
-                    {/* Source Mode Pill (Web + KB) */}
-                    <div
-                      className="hidden sm:flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-100/90 border border-slate-200/80 text-[11px] font-medium text-slate-600 shrink-0 cursor-pointer hover:bg-slate-200/70 transition-colors"
-                      title="Autonomous Routing: Searches Pinecone Knowledge Base with Tavily Web fallback"
-                    >
-                      <span>Web + KB</span>
-                      <ChevronDown className="w-3 h-3 text-slate-400" />
-                    </div>
-
-                    {/* Send Button */}
-                    <button
-                      onClick={() => handleSend()}
-                      disabled={!input.trim() || loading}
-                      className="w-8 h-8 rounded-full bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white flex items-center justify-center transition-all disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer shrink-0 shadow-2xs"
-                      title="Send message"
-                    >
-                      <Send className="w-3.5 h-3.5 fill-current ml-0.5" />
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* TAB 2: KB View */}
-          {activeTab === "kb" && (
-            <KBView
-              onAskInChat={(query) => {
-                handleSend(query)
-              }}
-            />
-          )}
-
-          {/* TAB 3: History View */}
-          {activeTab === "history" && (
-            <HistoryView
-              currentThreadId={threadId}
-              threads={savedThreads}
-              onResumeThread={handleResumeThread}
-              onDeleteThread={deleteThread}
-              onClearAll={clearAllThreads}
-              onNewChat={handleNewChat}
-            />
-          )}
-
-          {/* TAB 4: Settings View */}
-          {activeTab === "settings" && (
-            <SettingsView
-              backendOnline={backendOnline}
-              onResetSession={handleNewChat}
-              onClearStorage={clearStorage}
-            />
-          )}
-
-          {/* Right-Side LangGraph Workflow Panel */}
-          {activeTab === "chat" && showWorkflow && (
-            <aside className="border-l border-slate-200/90 bg-white/50 p-4 hidden md:flex items-start overflow-y-auto">
-              <WorkflowPanel
-                activeNode={activeNode}
-                visitedNodes={visitedNodes}
-                onClose={() => setShowWorkflow(false)}
-              />
-            </aside>
-          )}
-        </div>
-      </div>
+      {/* Secondary Settings Dialog */}
+      <Dialog
+        open={settingsDialogOpen}
+        onClose={() => setSettingsDialogOpen(false)}
+        title="System Architecture & Session Settings"
+        description="Inspect LangGraph configuration and manage local thread checkpoints"
+        maxWidth="max-w-xl"
+      >
+        <SettingsView
+          backendOnline={backendOnline}
+          onResetSession={() => {
+            handleNewChat()
+            setSettingsDialogOpen(false)
+          }}
+          onClearStorage={() => {
+            clearStorage()
+            handleNewChat()
+            setSettingsDialogOpen(false)
+          }}
+        />
+      </Dialog>
     </div>
   )
 }

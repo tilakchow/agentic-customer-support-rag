@@ -1,10 +1,16 @@
 import { useState, useRef, useEffect, useCallback } from "react"
-import { streamMessage, StreamCallbacks } from "../services/api"
+import { streamMessage, StreamCallbacks, CitationSource } from "../services/api"
 
 export interface UseChatStreamOptions {
   threadId: string
   onToken?: (token: string) => void
-  onComplete?: (data: { thread_id: string; source_used?: string; full_content?: string }) => void
+  onComplete?: (data: {
+    thread_id: string
+    source_used?: string
+    full_content?: string
+    sources?: CitationSource[]
+    ticket_payload?: Record<string, any>
+  }) => void
   onError?: (error: string) => void
 }
 
