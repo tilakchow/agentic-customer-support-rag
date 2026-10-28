@@ -8,7 +8,7 @@ Instead of static, linear retrieval that blindly passes top-k documents to an LL
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115+-009688.svg?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
 [![LangGraph](https://img.shields.io/badge/LangGraph-1.2+-1C3C3C.svg)](https://langchain.com/langgraph)
 [![React](https://img.shields.io/badge/React-19.2-61DAFB.svg?logo=react&logoColor=black)](https://react.dev)
-[![Tests](https://img.shields.io/badge/Tests-194%20Passing-brightgreen.svg)](tests/)
+[![Tests](https://img.shields.io/badge/Tests-234%20Passing-brightgreen.svg)](tests/)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 ---
@@ -190,8 +190,14 @@ NAMESPACE=bitext-support-v2
 # Install backend dependencies
 uv sync
 
-# Run backend unit, integration, and security tests (194 tests)
+# Run backend unit, integration, and security tests (234 tests)
 uv run pytest tests -q
+
+# Run benchmark evaluations
+uv run python evals/tool_use_eval.py
+uv run python evals/retrieval_eval.py
+uv run python evals/answer_quality_eval.py --sample 10
+uv run python evals/load_test.py --queries 50 --concurrency 5
 
 # Run frontend tests and build
 cd frontend
