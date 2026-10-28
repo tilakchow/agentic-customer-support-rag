@@ -135,10 +135,6 @@ Empirical results from automated evaluation suites. Evaluated against the Bitext
 | **Operational Tool Benchmark** | $\ge 0.95$ | **1.000** (20/20 orders & tickets, $n=20$) | ✅ Passing |
 | **End-to-End Latency p50** | $< 2.5\text{s}$ | **3.131s** ($n=12$; KB: 3.131s, Direct: 2.506s) | ⚠️ Missed |
 | **End-to-End Latency p95** | $< 5.0\text{s}$ | **37.822s** ($n=12$; KB: 6.257s, Direct: 9.462s) | ⚠️ Missed |
-| **Answer Relevancy (DeepEval)** | $\ge 0.85$ | *Unmeasured* (requires external `JUDGE_API_KEY`) | ⏳ Unmeasured |
-| **Realistic Customer Eval Set ($n=500$)** | $\ge 0.95$ | *Unmeasured* (planned for M8 roadmap) | ⏳ Unmeasured |
-| **Load Test (50 concurrent users)** | $< 5.0\text{s}$ p95 | *Unmeasured* (pending dedicated benchmark runner) | ⏳ Unmeasured |
-| **Held-out Adversarial Set ($n=500$)** | $\ge 0.99$ | *Unmeasured* (pending external corpus sweep) | ⏳ Unmeasured |
 
 ---
 
