@@ -13,6 +13,7 @@ from agenticrag.nodes import (
     generate_from_web,
     grade_kb_evidence,
     grade_web_evidence,
+    plan_tools,
     refuse_out_of_scope,
     retrieve_kb,
     rewrite_query,
@@ -42,6 +43,7 @@ def create_agent(checkpointer: Any = None):
     workflow.add_node(NodeName.REFUSE_OUT_OF_SCOPE.value, refuse_out_of_scope)
     workflow.add_node(NodeName.ESCALATE_TO_HUMAN.value, escalate_to_human)
     workflow.add_node(NodeName.ROUTE_QUESTION.value, route_question)
+    workflow.add_node(NodeName.PLAN_TOOLS.value, plan_tools)
     workflow.add_node(NodeName.CONDENSE_QUERY.value, condense_query)
     workflow.add_node(NodeName.RETRIEVE_KB.value, retrieve_kb)
     workflow.add_node(NodeName.GRADE_KB_EVIDENCE.value, grade_kb_evidence)
@@ -67,8 +69,10 @@ def create_agent(checkpointer: Any = None):
         },
     )
 
+    workflow.add_edge(NodeName.ROUTE_QUESTION.value, NodeName.PLAN_TOOLS.value)
+
     workflow.add_conditional_edges(
-        NodeName.ROUTE_QUESTION.value,
+        NodeName.PLAN_TOOLS.value,
         route_after_router,
         {
             NodeName.CONDENSE_QUERY.value: NodeName.CONDENSE_QUERY.value,

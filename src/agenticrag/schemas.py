@@ -81,3 +81,28 @@ class ClaimSupportCheck(BaseModel):
                     data["supported"] = data[key]
                     break
         return data
+
+
+class ToolCallRequest(BaseModel):
+    tool_name: Literal["get_order_status", "create_support_ticket"] = Field(
+        description="Name of the customer support tool to execute."
+    )
+    order_id: str | None = Field(
+        default=None,
+        description="Normalized order ID (e.g. ORD-1001) if checking order status or creating an order-specific ticket.",
+    )
+    summary: str | None = Field(
+        default=None,
+        description="Issue summary description if creating a support ticket.",
+    )
+
+
+class ToolPlan(BaseModel):
+    needs_tools: bool = Field(
+        default=False,
+        description="True if external operational tools (order tracking or support ticket creation) are needed.",
+    )
+    calls: list[ToolCallRequest] = Field(
+        default_factory=list,
+        description="List of tool requests to execute (maximum 2 per turn).",
+    )

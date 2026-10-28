@@ -42,8 +42,9 @@ graph TD
     Scope -- "Escalation / Legal Threat" --> Escalate["Escalate to Human (Ticket)"]
     Scope -- "In Scope" --> Router{"Intent Router"}
 
-    Router -- "General / Greeting" --> Direct["Direct Answer"]
-    Router -- "Support Inquiry" --> Condense["Condense Query (History)"]
+    Router --> PlanTools["Plan Tools (Orders / Tickets)"]
+    PlanTools -- "General / Greeting" --> Direct["Direct Answer"]
+    PlanTools -- "Support Inquiry" --> Condense["Condense Query (History)"]
 
     Condense --> RetrieveKB["Retrieve KB (Pinecone + Rerank)"]
     RetrieveKB --> GradeKB{"Grade Evidence (Bypass >= 0.45)"}
@@ -77,6 +78,7 @@ graph TD
 | **Refuse Out-of-Scope** | `refuse_out_of_scope` | Politely refuses non-support or injection requests without external calls. |
 | **Escalate to Human** | `escalate_to_human` | Generates a structured ticket payload and handoff message. |
 | **Route Question** | `route_question` | Classifies query intent as `kb` (support) or `direct` (greetings). |
+| **Plan Tools** | `plan_tools` | Executes order status lookups and support ticket creation (max 2 calls). |
 | **Condense Query** | `condense_query` | Preserves multi-turn conversational context into a standalone query. |
 | **Retrieve KB** | `retrieve_kb` | Queries Pinecone with cross-encoder neural reranking and grounded scoring. |
 | **Grade KB Evidence** | `grade_kb_evidence` | Evaluates evidence relevance (bypassed when top score $\ge 0.45$). |

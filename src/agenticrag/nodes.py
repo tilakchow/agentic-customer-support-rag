@@ -54,7 +54,7 @@ from agenticrag.routing import (
     is_policy_sensitive_request,
     is_proprietary_policy_query,
 )
-from agenticrag.schemas import ClaimSupportCheck, ScopeDecision
+from agenticrag.schemas import ClaimSupportCheck, ScopeDecision, ToolCallRequest, ToolPlan
 from agenticrag.security import (
     check_llm_injection,
     filter_canary_and_leaks,
@@ -64,6 +64,7 @@ from agenticrag.security import (
 )
 from agenticrag.state import AgentState
 from agenticrag.telemetry import get_telemetry_collector, traced_node
+from agenticrag.tools import create_support_ticket, get_order_status
 
 logger = logging.getLogger(__name__)
 
@@ -287,6 +288,99 @@ async def route_question(state: AgentState) -> dict[str, Any]:
         "web_search_failed": False,
         "kb_retrieval_failed": False,
         "top_similarity_score": 0.0,
+    }
+
+
+@traced_node("plan_tools")
+async def plan_tools(state: AgentState) -> dict[str, Any]:
+    """Plans and executes customer support operational tools (order tracking, ticket creation).
+
+    Enforces:
+    - Structured output using ToolPlan schema
+    - Capped at maximum 2 tool calls per turn
+    - Pydantic validation of tool arguments
+    - Multi-tenant isolation for order status lookups
+    """
+    question = get_latest_question(state)
+    tenant_id = state.get("tenant_id", "default")
+
+    # Fast heuristic checks for order IDs (e.g. ORD-1001) or ticket creation
+    order_match = re.search(r"\b(ORD-\d+)\b", question, re.IGNORECASE)
+    is_order_query = bool(
+        order_match
+        or re.search(r"\b(?:order|tracking|package|shipment|status)\b", question, re.IGNORECASE)
+    )
+    is_ticket_query = bool(
+        re.search(
+            r"\b(?:ticket|support\s+request|file\s+a\s+claim|complaint)\b",
+            question,
+            re.IGNORECASE,
+        )
+    )
+
+    if not is_order_query and not is_ticket_query:
+        return {"tool_calls": [], "tool_results": []}
+
+    plan = ToolPlan(needs_tools=False, calls=[])
+
+    # Try deterministic rule extraction first if clear order ID or ticket intent
+    extracted_calls: list[ToolCallRequest] = []
+    if order_match:
+        extracted_calls.append(
+            ToolCallRequest(tool_name="get_order_status", order_id=order_match.group(1).upper())
+        )
+    if is_ticket_query and any(
+        kw in question.lower() for kw in ("create", "open", "submit", "file")
+    ):
+        extracted_calls.append(
+            ToolCallRequest(
+                tool_name="create_support_ticket",
+                summary=redact_pii(question[:100]),
+                order_id=order_match.group(1).upper() if order_match else None,
+            )
+        )
+
+    if extracted_calls:
+        plan = ToolPlan(needs_tools=True, calls=extracted_calls)
+    else:
+        # LLM structured output for fuzzy planning
+        try:
+            prompt = (
+                "You are an operational tool planner for customer support.\n"
+                "Available tools:\n"
+                "1. get_order_status(order_id): Look up status, carrier, and tracking for an order ID (e.g. ORD-1001).\n"
+                "2. create_support_ticket(summary, order_id): Create a support ticket for customer issues.\n\n"
+                f"Customer Query: {question}\n\n"
+                "Determine if any tools are needed. Max 2 calls. Return JSON matching the ToolPlan schema."
+            )
+            llm = get_llm().with_structured_output(ToolPlan, method="json_mode")
+            plan_res = await llm.ainvoke(prompt)
+            if isinstance(plan_res, ToolPlan):
+                plan = plan_res
+        except Exception as e:
+            logger.debug("[Tool Planner LLM fallback]: %s", e)
+            plan = ToolPlan(needs_tools=False, calls=[])
+
+    # Enforce maximum 2 calls per turn constraint
+    valid_calls = plan.calls[:2] if plan.needs_tools else []
+    tool_results: list[dict[str, Any]] = []
+
+    for call in valid_calls:
+        if call.tool_name == "get_order_status" and call.order_id:
+            res = get_order_status(order_id=call.order_id, tenant_id=tenant_id)
+            tool_results.append({"tool": "get_order_status", "result": res})
+        elif call.tool_name == "create_support_ticket":
+            res = create_support_ticket(
+                summary=call.summary or redact_pii(question[:120]),
+                order_id=call.order_id,
+                tenant_id=tenant_id,
+            )
+            tool_results.append({"tool": "create_support_ticket", "result": res})
+
+    serialized_calls = [c.model_dump() for c in valid_calls]
+    return {
+        "tool_calls": serialized_calls,
+        "tool_results": tool_results,
     }
 
 
@@ -670,6 +764,11 @@ async def generate_from_kb(state: AgentState) -> dict[str, Any]:
         f"[Source {idx + 1}: {doc.metadata.get('intent', doc.metadata.get('source', 'unknown'))} (id: {doc.metadata.get('id', f'doc-{idx + 1}')})]\n{doc.page_content}"
         for idx, doc in enumerate(state.get("kb_docs", []))
     )
+    tool_results = state.get("tool_results")
+    if tool_results:
+        tool_ctx = "\n".join(str(r.get("result", r)) for r in tool_results)
+        raw_context = f"{raw_context}\n\n[Operational Tool Records]\n{tool_ctx}".strip()
+
     context = sanitize_untrusted_context(raw_context)
     system_text = CUSTOMER_SUPPORT_SYSTEM_PROMPT + UNTRUSTED_CONTEXT_INSTRUCTION
     human_text = KB_GENERATION_HUMAN_TEMPLATE.format(
@@ -760,6 +859,11 @@ async def direct_answer(state: AgentState) -> dict[str, Any]:
     """Generates direct answer for greetings, conversational chit-chat, or meta questions."""
     question = get_latest_question(state)
     history = get_conversation_history(state)
+    tool_results = state.get("tool_results")
+    if tool_results:
+        tool_ctx = "\n".join(str(r.get("result", r)) for r in tool_results)
+        history = f"{history}\n\n[Operational Tool Records]\n{tool_ctx}".strip()
+
     prompt = DIRECT_ANSWER_PROMPT_TEMPLATE.format(
         system_prompt=CUSTOMER_SUPPORT_SYSTEM_PROMPT, history=history, question=question
     )

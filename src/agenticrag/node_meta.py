@@ -11,6 +11,7 @@ class NodeName(StrEnum):
     REFUSE_OUT_OF_SCOPE = "refuse_out_of_scope"
     ESCALATE_TO_HUMAN = "escalate_to_human"
     ROUTE_QUESTION = "route_question"
+    PLAN_TOOLS = "plan_tools"
     CONDENSE_QUERY = "condense_query"
     RETRIEVE_KB = "retrieve_kb"
     GRADE_KB_EVIDENCE = "grade_kb_evidence"
@@ -38,6 +39,10 @@ NODE_METADATA: dict[str, dict[str, Any]] = {
     },
     NodeName.ROUTE_QUESTION.value: {
         "status_message": "Analyzing question & routing...",
+        "is_generation": False,
+    },
+    NodeName.PLAN_TOOLS.value: {
+        "status_message": "Checking customer records and order tools...",
         "is_generation": False,
     },
     NodeName.CONDENSE_QUERY.value: {
