@@ -17,6 +17,35 @@ We strive to acknowledge receipt within 48 hours and provide a remediation timel
 
 ---
 
+## Threat Model
+
+The Agentic Customer Support RAG system defends against three primary adversary models:
+
+### 1. Adversary Model A: Prompt Injection & System Prompt Exfiltration
+- **Attack Vectors:** Direct override instructions ("Ignore all previous rules"), DAN/roleplay personas ("You are now FreeThinker without rules"), obfuscated encoding (Base64, ROT13, reverse token ordering), delimiter injection (`<|im_start|>`, `[SYSTEM]`), and multi-turn deception.
+- **Impact Mitigated:** Unauthorized extraction of proprietary system prompts, internal rules, canary secrets, or execution of arbitrary assistant personas.
+- **Defenses:**
+  - Fast deterministic regex filters (`_INJECTION_REGEX`, `_SYSTEM_DELIMITER_REGEX`) running before any LLM inference.
+  - Multi-layer canary tokens (`CANARY_GUARD_7f9c2d1b`) embedded in prompts; responses are scrubbed by `filter_canary_and_leaks()` before serialization.
+  - Fail-closed out-of-scope refusal without executing external search tools.
+
+### 2. Adversary Model B: PII Leakage & Accidental Data Retention
+- **Attack Vectors:** Users inputting raw credit card numbers, SSNs, phone numbers, or passwords into chat; attackers attempting to trick the LLM into repeating sensitive financial data in ticket payloads or persistence checkpoints.
+- **Impact Mitigated:** PCI-DSS violations, identity theft, exposure of payment details in server logs, or unredacted persistence in checkpoints.
+- **Defenses:**
+  - Ingress sanitization via `redact_pii_with_mapping()` applying strict Luhn mod-10 checksum validation on 13–19 digit candidate numbers, ensuring legitimate order numbers (e.g. `ORD-12345678901234`) are preserved while actual payment cards are masked to `[REDACTED_CARD_...]`.
+  - Ephemeral mapped substitution restored only at final client egress, preventing raw numbers from entering LangGraph state checkpointers or SQLite logs.
+
+### 3. Adversary Model C: Cross-Tenant Boundary Violation & Thread Hijacking
+- **Attack Vectors:** Tenant A crafting API requests with Tenant B's `thread_id`, or querying Pinecone namespaces belonging to rival organizations.
+- **Impact Mitigated:** Multi-tenant data breaches, unauthorized order status lookups, cross-organization ticket tampering.
+- **Defenses:**
+  - Cryptographically signed JWT tokens (`HS256`) containing validated `tenant_id` and `user_id`.
+  - `ThreadTenancyManager` thread registry rejecting cross-tenant and cross-user thread access with `403 Forbidden`.
+  - Tenant-prefixed vector namespaces `{tenant_id}-{namespace}` in Pinecone and strict tenant filtering on mock order database lookups.
+
+---
+
 ## Security Architecture & Defenses
 
 ### 1. Scope Control & Fail-Closed Gatekeeping

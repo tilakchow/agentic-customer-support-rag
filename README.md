@@ -114,17 +114,35 @@ graph TD
 
 Empirical quality, safety, and latency metrics are tracked in [`evals/SCOREBOARD.md`](evals/SCOREBOARD.md):
 
-| Metric | Target | Measured Result | Status |
-| :--- | :---: | :---: | :---: |
+| Metric | Target | Current Value | Status |
+| :--- | :--- | :--- | :--- |
 | **Recall@4 (Dev split, reranker=true)** | $\ge 0.95$ | **0.951** (95% CI: [0.902, 0.988], $n=82$) | Passing |
+| **Recall@4 (Dev split, reranker=false)**| - | **0.939** (95% CI: [0.890, 0.988], $n=82$) | Baseline |
+| **Precision@4 (Dev split, reranker=true)**| $\ge 0.85$ | **0.878** (95% CI: [0.820, 0.927], $n=82$) | Passing |
 | **MRR (Dev split, reranker=true)** | $\ge 0.90$ | **0.937** (95% CI: [0.882, 0.980], $n=82$) | Passing |
-| **Grader Bypass Rate (score >= 0.45)** | $\ge 0.90$ | **0.986** (70/71 bypassed, 95% CI: [0.958, 1.000]) | Passing |
-| **Grader False Bypass Rate (OOS/Adv)** | $\le 0.05$ | **0.000** (0/24 false bypass, 95% CI: [0.000, 0.000]) | Passing |
+| **Grader Bypass Rate (score >= 0.45)** | $\ge 0.90$ | **0.986** (70/71 bypassed, 95% CI: [0.958, 1.000], $n=71$) | Passing |
+| **Grader False Bypass Rate (OOS/Adv)** | $\le 0.05$ | **0.000** (0/24 false bypass, 95% CI: [0.000, 0.000], $n=24$) | Passing |
 | **Multi-Turn Recall@4 (with condensing)**| $\ge 0.95$ | **1.000** (95% CI: [1.000, 1.000], $n=12$) | Passing |
-| **Out-of-Scope Refusal Rate** | $\ge 0.95$ | **1.000** (12/12 passed, 95% CI: [0.758, 1.000]) | Passing |
-| **Escalation Recall** | $\ge 0.95$ | **1.000** (8/8 passed, 95% CI: [0.676, 1.000]) | Passing |
+| **Out-of-Scope Refusal Rate** | $\ge 0.95$ | **1.000** (12/12 passed, 95% CI: [0.758, 1.000], $n=12$) | Passing |
+| **Escalation Recall** | $\ge 0.95$ | **1.000** (8/8 passed, 95% CI: [0.676, 1.000], $n=8$) | Passing |
 | **Prompt Injection Defense** | $1.00$ | **1.000** (52/52 passed, 95% CI: [0.931, 1.000], $n=52$) | Passing |
-| **Faithfulness (Claim-Support)** | $\ge 0.85$ | **1.000** (4/4 passed, 95% CI: [0.510, 1.000]) | Passing |
+| **Faithfulness (Claim-Support)** | $\ge 0.85$ | **1.000** (4/4 passed, 95% CI: [0.510, 1.000], $n=4$) | Passing |
+| **Answer Relevancy (DeepEval)** | $\ge 0.85$ | *UNMEASURED* (Requires external JUDGE_API_KEY) | Unmeasured |
+| **Operational Tool Benchmark** | $\ge 0.90$ | **1.000** (20/20 passed, 100.0%, $n=20$) | Passing |
+
+---
+
+## Known limitations
+
+1. **Upstream Free-Tier Rate Limits (Groq TPM / TPD):**
+   - The Groq on-demand tier enforces an **8,000 Tokens Per Minute (TPM)** and **200,000 Tokens Per Day (TPD)** limit.
+   - Because a full graph turn executes scope classification, routing, tool planning, generation, and faithfulness checks, a single conversational turn can consume 4,000–6,000 tokens.
+   - Rapid back-to-back requests within 60 seconds or heavy evaluation sweeps will trigger Groq HTTP 429 rate limit errors, which activate the system's graceful fallback.
+2. **Diluted Multi-Intent Queries:**
+   - Combining orthogonal intents into a single message (e.g. asking for an order lookup `ORD-1001` alongside broad refund policy questions) produces a blended vector embedding in Pinecone with lower similarity scores (<0.15). For best results, ask discrete questions sequentially.
+3. **External Provider Latency & Cold Starts:**
+   - Free-tier serverless backends (such as Render) experience cold start delays (~30–50s) upon initial wake-up.
+   - Embedding and reranker execution add ~150–250ms per retrieval pass.
 
 ---
 
@@ -137,7 +155,7 @@ Each critical graph node has an explicit `FAIL_MODE` setting configuring how err
 | **Scope Classifier** (`classify_scope`) | `FAIL_MODE_SCOPE_CLASSIFIER` | `closed` | Fails closed: routes immediately to `answer_insufficient` with a polite try-again notice and escalation hint, preventing unverified or out-of-scope requests from reaching downstream execution. When set to `open`, falls back to `in_scope`. |
 | **Router** (`route_question`) | `FAIL_MODE_ROUTER` | `open` | Fails open: routes to `kb` (retrieval path) so customer inquiries are backed by knowledge base evidence rather than dropped. When set to `closed`, falls back to `direct`. |
 | **Evidence Grader** (`grade_kb_evidence`, `grade_web_evidence`) | `FAIL_MODE_GRADER` | `closed` | Fails closed: treats evidence as `weak`, preventing unverified or low-confidence documents from generating hallucinations. |
-| **Faithfulness Check** (`check_claim_support`) | `FAIL_MODE_FAITHFULNESS` | `adaptive` | Fails closed (`supported=False`) for policy, warranty, and billing intents to prevent liability; fails open (`supported=True`) for generic inquiries. Can also be explicitly forced to `open` or `closed`. |
+| **Faithfulness Check** (`check_claim_support`) | `FAIL_MODE_FAITHFULNESS` | `adaptive` | Fails closed (`supported=False`) for policy, warranty, and billing intents to prevent liability; fails open (`supported=True`) for generic inquiries. On detected ungrounded claims, executes a strict 1-turn grounded regeneration retry before human escalation. |
 
 ---
 
