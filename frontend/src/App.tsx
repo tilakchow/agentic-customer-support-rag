@@ -81,19 +81,50 @@ export function AppContent() {
     recordMessages(threadId, messages)
   }, [messages, threadId, recordMessages])
 
-  // Periodic health check
+  // Resilient, respectful health checking:
+  // - Performs initial verification on mount
+  // - Re-verifies when tab regains visibility/focus
+  // - Polls with 45s interval, avoiding concurrent runs and tight retry loops
+  // - Pauses polling when the browser tab is hidden to save client & server resources
   useEffect(() => {
+    let isMounted = true
+    let timerId: ReturnType<typeof setTimeout> | null = null
+
     const verify = async () => {
+      if (typeof document !== "undefined" && document.hidden) return
+
       try {
         await checkHealth()
-        setBackendOnline(true)
+        if (isMounted) setBackendOnline(true)
       } catch {
-        setBackendOnline(false)
+        if (isMounted) setBackendOnline(false)
+      } finally {
+        if (isMounted) {
+          timerId = setTimeout(verify, 45000)
+        }
       }
     }
+
     verify()
-    const timer = setInterval(verify, 12000)
-    return () => clearInterval(timer)
+
+    const handleVisibilityChange = () => {
+      if (typeof document !== "undefined" && !document.hidden) {
+        if (timerId) clearTimeout(timerId)
+        verify()
+      }
+    }
+
+    if (typeof document !== "undefined") {
+      document.addEventListener("visibilitychange", handleVisibilityChange)
+    }
+
+    return () => {
+      isMounted = false
+      if (timerId) clearTimeout(timerId)
+      if (typeof document !== "undefined") {
+        document.removeEventListener("visibilitychange", handleVisibilityChange)
+      }
+    }
   }, [])
 
   // Auto scroll to bottom

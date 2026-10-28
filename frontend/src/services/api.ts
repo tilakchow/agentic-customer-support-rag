@@ -47,10 +47,22 @@ export interface StreamCallbacks {
   onError?: (error: string) => void
 }
 
-// Client API configuration: Defaults to '/api' so all requests route through the
-// reverse-proxy / edge functions (injecting auth and preventing direct exposure).
-// If a custom backend or direct endpoint is explicitly desired, set VITE_API_URL.
-const API_BASE = (import.meta.env.VITE_API_URL || "/api").replace(/\/$/, "");
+// Client API configuration:
+// In production on Vercel and in local development via Vite proxy, all requests MUST
+// route through same-origin '/api' endpoints (e.g. '/api/health', '/api/chat/stream').
+// This ensures requests pass through the edge reverse proxy, inject authentication credentials,
+// avoid CORS preflight delays, and completely prevent client-side privacy blocker errors
+// (net::ERR_BLOCKED_BY_CLIENT) caused by browser extensions blocking third-party backend hosts.
+// We strictly enforce relative paths (e.g. '/api') in the browser client and ignore absolute external URLs.
+function getClientApiBase(): string {
+  const customBase = import.meta.env.VITE_CLIENT_API_BASE;
+  if (customBase && customBase.startsWith("/")) {
+    return customBase.replace(/\/$/, "");
+  }
+  return "/api";
+}
+
+const API_BASE = getClientApiBase();
 
 function getHeaders(extraHeaders: Record<string, string> = {}): Record<string, string> {
   return { ...extraHeaders };

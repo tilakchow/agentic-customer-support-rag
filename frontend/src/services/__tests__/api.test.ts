@@ -23,17 +23,16 @@ describe('Frontend API Service', () => {
   })
 
   it('checkHealth calls /health and returns data', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockResolvedValue({
-        ok: true,
-        json: async () => ({ status: 'online', service: 'agentic-rag' }),
-      })
-    )
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ status: 'online', service: 'agentic-rag' }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
 
     const res = await checkHealth()
     expect(res.status).toBe('online')
     expect(res.service).toBe('agentic-rag')
+    expect(fetchMock).toHaveBeenCalledWith('/api/health', expect.any(Object))
   })
 
   it('fetchKBInfo calls /kb/info and returns details', async () => {
