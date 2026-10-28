@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { checkEdgeRateLimit, isAllowedOrigin, getClientIp } from '../../../api/_proxy'
 
 describe('Edge Proxy Security & Rate Limiting Helpers', () => {
@@ -108,6 +108,125 @@ describe('Edge Proxy Security & Rate Limiting Helpers', () => {
       expect(healthConfig.runtime).toBe('edge')
       expect(typeof infoHandler).toBe('function')
       expect(infoConfig.runtime).toBe('edge')
+    })
+  })
+
+  describe('Endpoint Proxy Execution, Streaming, Error Handling & Secret Protection', () => {
+    const originalFetch = globalThis.fetch
+
+    afterEach(() => {
+      globalThis.fetch = originalFetch
+    })
+
+    it('health handler proxies GET /health successfully', async () => {
+      const { default: healthHandler } = await import('../../../api/health.js')
+      globalThis.fetch = vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ status: 'ok', environment: 'production' }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      )
+
+      const req = new Request('https://agentic-customer-support-rag.vercel.app/api/health')
+      const res = await healthHandler(req)
+      expect(res.status).toBe(200)
+      const data = await res.json()
+      expect(data.status).toBe('ok')
+      expect(globalThis.fetch).toHaveBeenCalledWith(
+        expect.stringContaining('/health'),
+        expect.objectContaining({ method: 'GET' })
+      )
+    })
+
+    it('kb/info handler proxies GET /kb/info successfully', async () => {
+      const { default: infoHandler } = await import('../../../api/kb/info.js')
+      globalThis.fetch = vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ status: 'ready', total_chunks: 100 }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      )
+
+      const req = new Request('https://agentic-customer-support-rag.vercel.app/api/kb/info')
+      const res = await infoHandler(req)
+      expect(res.status).toBe(200)
+      const data = await res.json()
+      expect(data.status).toBe('ready')
+    })
+
+    it('kb/search handler proxies POST /kb/search with query payload', async () => {
+      const { default: searchHandler } = await import('../../../api/kb/search.js')
+      globalThis.fetch = vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ results: [{ title: 'Doc 1', content: 'Info' }] }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      )
+
+      const req = new Request('https://agentic-customer-support-rag.vercel.app/api/kb/search', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query: 'return policy', top_k: 3 }),
+      })
+      const res = await searchHandler(req)
+      expect(res.status).toBe(200)
+      const data = await res.json()
+      expect(data.results).toHaveLength(1)
+    })
+
+    it('chat handler proxies POST /chat with message payload', async () => {
+      const { default: chatHandler } = await import('../../../api/chat.js')
+      globalThis.fetch = vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ answer: 'Here is your answer', route: 'kb' }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      )
+
+      const req = new Request('https://agentic-customer-support-rag.vercel.app/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: 'Hello!' }),
+      })
+      const res = await chatHandler(req)
+      expect(res.status).toBe(200)
+      const data = await res.json()
+      expect(data.answer).toBe('Here is your answer')
+    })
+
+    it('chat-stream handler proxies POST /chat/stream with event-stream headers', async () => {
+      const { default: streamHandler } = await import('../../../api/chat-stream.js')
+      const streamText = 'data: {"event": "status", "node": "classify_scope"}\n\n'
+      globalThis.fetch = vi.fn().mockResolvedValue(
+        new Response(streamText, {
+          status: 200,
+          headers: { 'Content-Type': 'text/event-stream' },
+        })
+      )
+
+      const req = new Request('https://agentic-customer-support-rag.vercel.app/api/chat-stream', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: 'Streaming query' }),
+      })
+      const res = await streamHandler(req)
+      expect(res.status).toBe(200)
+      expect(res.headers.get('Content-Type')).toBe('text/event-stream')
+      expect(res.headers.get('Cache-Control')).toContain('no-cache')
+    })
+
+    it('handles backend connection failure by returning clean 502 without leaking secrets or traces', async () => {
+      const { default: healthHandler } = await import('../../../api/health.js')
+      globalThis.fetch = vi.fn().mockRejectedValue(new Error('ECONNREFUSED 127.0.0.1:8000'))
+
+      const req = new Request('https://agentic-customer-support-rag.vercel.app/api/health')
+      const res = await healthHandler(req)
+      expect(res.status).toBe(502)
+      const data = await res.json()
+      expect(data.error).toBe('Backend service is currently unavailable. Please try again shortly.')
+      // Ensure no raw internal error details leaked
+      expect(JSON.stringify(data)).not.toContain('ECONNREFUSED')
+      expect(JSON.stringify(data)).not.toContain('API_KEY')
     })
   })
 })
