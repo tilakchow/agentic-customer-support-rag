@@ -39,3 +39,4 @@ class AgentState(TypedDict):
     scope: str  # 'in_scope', 'out_of_scope', 'needs_human', 'policy_sensitive'
     ticket_payload: dict[str, Any] | None
     escalated: bool
+    tenant_id: str

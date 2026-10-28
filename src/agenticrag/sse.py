@@ -26,6 +26,7 @@ async def stream_agent_generator(
     thread_id: str,
     agent_app: Any,
     request: Request | None = None,
+    tenant_id: str = "default",
 ) -> AsyncGenerator[str, None]:
     """Generates Server-Sent Events asynchronously with client disconnect detection."""
     if agent_app is None:
@@ -35,7 +36,7 @@ async def stream_agent_generator(
         )
 
     config = {"configurable": {"thread_id": thread_id}}
-    input_data = {"messages": [HumanMessage(content=message)]}
+    input_data = {"messages": [HumanMessage(content=message)], "tenant_id": tenant_id}
     active_node = ""
 
     try:

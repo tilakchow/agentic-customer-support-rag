@@ -341,7 +341,11 @@ async def chat_endpoint(
     config = {"configurable": {"thread_id": thread_id}}
     try:
         result = await agent_app.ainvoke(
-            {"messages": [HumanMessage(content=body.message)]}, config=config
+            {
+                "messages": [HumanMessage(content=body.message)],
+                "tenant_id": user.tenant_id,
+            },
+            config=config,
         )
 
         messages = result.get("messages", [])
@@ -423,7 +427,11 @@ async def chat_stream_endpoint(
     )
     return StreamingResponse(
         stream_agent_generator(
-            body.message, thread_id, agent_app=get_current_agent(), request=request
+            body.message,
+            thread_id,
+            agent_app=get_current_agent(),
+            request=request,
+            tenant_id=user.tenant_id,
         ),
         media_type="text/event-stream",
     )

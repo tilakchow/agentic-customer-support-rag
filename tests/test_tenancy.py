@@ -133,3 +133,96 @@ def test_scoped_kb_search_tenant_isolation():
     data = response.json()
     assert data["tenant_id"] == "tenant-gamma"
     assert data["namespace"] == "tenant-gamma-bitext-support-v2"
+
+
+@pytest.mark.asyncio
+async def test_retrieve_kb_node_tenant_namespace_isolation(monkeypatch):
+    """Verifies nodes.retrieve_kb queries vectorstore using caller tenant namespace."""
+    from agenticrag.nodes import retrieve_kb
+
+    mock_vs = MagicMock()
+    mock_vs.similarity_search_with_score.return_value = []
+    monkeypatch.setattr("agenticrag.nodes.get_vectorstore", lambda: mock_vs)
+
+    # State with Tenant Alpha
+    state_alpha = {
+        "current_query": "how do I cancel?",
+        "tenant_id": "tenant-alpha",
+    }
+    await retrieve_kb(state_alpha)
+    assert mock_vs.similarity_search_with_score.call_args is not None
+    assert mock_vs.similarity_search_with_score.call_args.kwargs.get(
+        "namespace"
+    ) == get_tenant_namespace("tenant-alpha")
+
+    # State with Tenant Beta
+    state_beta = {
+        "current_query": "how do I cancel?",
+        "tenant_id": "tenant-beta",
+    }
+    await retrieve_kb(state_beta)
+    assert mock_vs.similarity_search_with_score.call_args.kwargs.get(
+        "namespace"
+    ) == get_tenant_namespace("tenant-beta")
+
+
+def test_chat_and_stream_pass_tenant_id_to_graph(monkeypatch):
+    """Asserts /chat and /chat/stream forward caller tenant_id to initial graph input."""
+    client = TestClient(app)
+    recorded_inputs = []
+
+    mock_agent = MagicMock()
+
+    async def fake_ainvoke(input_data, config=None):
+        recorded_inputs.append(("chat", input_data, config))
+        return {
+            "messages": [AIMessage(content="Response for tenant")],
+            "source_used": "direct",
+        }
+
+    async def fake_astream_events(input_data, config=None, version="v2"):
+        recorded_inputs.append(("stream", input_data, config))
+        if False:
+            yield {}
+
+    async def fake_aget_state(config=None):
+        mock_snapshot = MagicMock()
+        mock_snapshot.values = {
+            "messages": [AIMessage(content="Response for tenant")],
+            "source_used": "direct",
+        }
+        return mock_snapshot
+
+    mock_agent.ainvoke = fake_ainvoke
+    mock_agent.astream_events = fake_astream_events
+    mock_agent.aget_state = fake_aget_state
+    monkeypatch.setattr(api_module, "get_current_agent", lambda: mock_agent)
+
+    token_alpha = create_jwt({"sub": "user-1", "tenant_id": "tenant-alpha"})
+    token_beta = create_jwt({"sub": "user-2", "tenant_id": "tenant-beta"})
+
+    # 1. /chat with tenant-alpha
+    resp_chat = client.post(
+        "/chat",
+        json={"message": "Query alpha", "thread_id": "th-chat-alpha"},
+        headers={"Authorization": f"Bearer {token_alpha}"},
+    )
+    assert resp_chat.status_code == 200
+    assert any(
+        kind == "chat" and data.get("tenant_id") == "tenant-alpha"
+        for kind, data, _ in recorded_inputs
+    )
+
+    # 2. /chat/stream with tenant-beta
+    resp_stream = client.post(
+        "/chat/stream",
+        json={"message": "Query beta", "thread_id": "th-stream-beta"},
+        headers={"Authorization": f"Bearer {token_beta}"},
+    )
+    assert resp_stream.status_code == 200
+    # Consume stream
+    _ = resp_stream.text
+    assert any(
+        kind == "stream" and data.get("tenant_id") == "tenant-beta"
+        for kind, data, _ in recorded_inputs
+    )

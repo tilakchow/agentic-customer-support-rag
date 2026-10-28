@@ -23,6 +23,7 @@ def retrieve_kb(
     query: str,
     *,
     k: int = RETRIEVER_K,
+    namespace: str | None = None,
     vectorstore: Any = None,
     settings: Settings | None = None,
     pinecone_client: Any = None,
@@ -33,6 +34,7 @@ def retrieve_kb(
     Args:
         query: User search query.
         k: Maximum number of final documents to return.
+        namespace: Target namespace for tenant isolation (defaults to settings.namespace).
         vectorstore: Pinecone vectorstore instance (defaults to get_vectorstore()).
         settings: Application settings (defaults to get_settings()).
         pinecone_client: Pinecone client instance for reranking (defaults to get_pinecone_client()).
@@ -48,11 +50,12 @@ def retrieve_kb(
 
     use_rerank = settings.reranker_enabled if reranker_enabled is None else reranker_enabled
     fetch_k = settings.rerank_fetch_k if use_rerank else k
+    target_namespace = namespace if namespace is not None else settings.namespace
 
     scored_results = vs.similarity_search_with_score(
         query,
         k=fetch_k,
-        namespace=settings.namespace,
+        namespace=target_namespace,
     )
 
     candidate_docs: list[Document] = []

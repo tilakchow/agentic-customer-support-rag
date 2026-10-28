@@ -10,6 +10,7 @@ from typing import Any
 from langchain_core.documents import Document
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
+from agenticrag.auth import get_tenant_namespace
 from agenticrag.clients import (
     get_classifier_llm,
     get_faithfulness_llm,
@@ -260,10 +261,13 @@ async def retrieve_kb(state: AgentState) -> dict[str, Any]:
             }
 
         pc = await asyncio.to_thread(get_pinecone_client) if settings.reranker_enabled else None
+        tenant_id = state.get("tenant_id", "default")
+        namespace = get_tenant_namespace(tenant_id)
         res = await asyncio.to_thread(
             retrieve_kb_documents,
             query=query,
             k=RETRIEVER_K,
+            namespace=namespace,
             vectorstore=vectorstore,
             settings=settings,
             pinecone_client=pc,
