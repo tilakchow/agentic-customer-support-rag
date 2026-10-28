@@ -337,11 +337,20 @@ async def chat_endpoint(
             "[State Inspection] Unable to retrieve state for thread %s: %s", thread_id, state_err
         )
 
+    from agenticrag.security import (
+        filter_canary_and_leaks,
+        redact_pii_with_mapping,
+        restore_pii_mapping,
+    )
+
+    # Redact PII at ingress before passing to LLM, checkpointing, or cache lookup
+    sanitized_message, pii_mapping = redact_pii_with_mapping(body.message)
+
     is_first_turn = len(prior_messages) == 0
 
     if is_first_turn:
         cached = get_response_cache().get(
-            query=body.message,
+            query=sanitized_message,
             tenant_id=user.tenant_id,
             kb_version=get_settings().kb_version,
         )
@@ -353,11 +362,12 @@ async def chat_endpoint(
                     config,
                     {
                         "messages": [
-                            HumanMessage(content=body.message),
+                            HumanMessage(content=sanitized_message),
                             AIMessage(content=cached["response"]),
                         ],
                         "tenant_id": user.tenant_id,
                         "source_used": "cached_kb",
+                        "pii_mapping": pii_mapping,
                     },
                 )
             except Exception as update_err:
@@ -366,8 +376,12 @@ async def chat_endpoint(
                     update_err,
                 )
 
+            cached_resp = cached["response"]
+            if pii_mapping:
+                cached_resp = restore_pii_mapping(cached_resp, pii_mapping)
+
             return ChatResponse(
-                response=cached["response"],
+                response=cached_resp,
                 thread_id=thread_id,
                 source_used="cached_kb",
                 ticket_payload=cached.get("ticket_payload"),
@@ -377,8 +391,9 @@ async def chat_endpoint(
     try:
         result = await agent_app.ainvoke(
             {
-                "messages": [HumanMessage(content=body.message)],
+                "messages": [HumanMessage(content=sanitized_message)],
                 "tenant_id": user.tenant_id,
+                "pii_mapping": pii_mapping,
             },
             config=config,
         )
@@ -391,9 +406,7 @@ async def chat_endpoint(
         raw_content = (
             last_message.content if hasattr(last_message, "content") else str(last_message)
         )
-        from agenticrag.security import filter_canary_and_leaks
-
-        answer_content = filter_canary_and_leaks(str(raw_content))
+        answer_content = filter_canary_and_leaks(str(raw_content), pii_mapping=pii_mapping)
         source = result.get("source_used", "unknown")
         ticket_payload = result.get("ticket_payload")
         kb_docs = result.get("kb_docs", [])
@@ -423,7 +436,7 @@ async def chat_endpoint(
 
         if is_first_turn and source in ("private_kb", "direct", "out_of_scope_refusal"):
             get_response_cache().set(
-                query=body.message,
+                query=sanitized_message,
                 response_data={
                     "response": chat_resp.response,
                     "source_used": chat_resp.source_used,

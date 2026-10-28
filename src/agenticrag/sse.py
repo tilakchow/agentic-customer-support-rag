@@ -35,8 +35,16 @@ async def stream_agent_generator(
             "Pass app.state.agent_app from the FastAPI lifespan."
         )
 
+    from agenticrag.security import filter_canary_and_leaks, redact_pii_with_mapping
+
+    sanitized_message, pii_mapping = redact_pii_with_mapping(message)
+
     config = {"configurable": {"thread_id": thread_id}}
-    input_data = {"messages": [HumanMessage(content=message)], "tenant_id": tenant_id}
+    input_data = {
+        "messages": [HumanMessage(content=sanitized_message)],
+        "tenant_id": tenant_id,
+        "pii_mapping": pii_mapping,
+    }
     active_node = ""
 
     try:
@@ -101,9 +109,7 @@ async def stream_agent_generator(
 
         messages = final_state.get("messages", [])
         last_content = messages[-1].content if messages else ""
-        from agenticrag.security import filter_canary_and_leaks
-
-        safe_content = filter_canary_and_leaks(str(last_content))
+        safe_content = filter_canary_and_leaks(str(last_content), pii_mapping=pii_mapping)
 
         yield sse(
             {

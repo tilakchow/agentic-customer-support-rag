@@ -20,16 +20,115 @@ _API_KEY_REGEX = re.compile(
 )
 
 
+def luhn_checksum_valid(number_str: str) -> bool:
+    """Validates whether a digit sequence satisfies the Luhn mod-10 formula."""
+    digits = [int(c) for c in number_str if c.isdigit()]
+    if len(digits) < 13 or len(digits) > 19:
+        return False
+    total = 0
+    reverse_digits = digits[::-1]
+    for i, d in enumerate(reverse_digits):
+        if i % 2 == 1:
+            doubled = d * 2
+            total += doubled - 9 if doubled > 9 else doubled
+        else:
+            total += d
+    return total % 10 == 0
+
+
+def redact_pii_with_mapping(text: str) -> tuple[str, dict[str, str]]:
+    """Masks payment card numbers (with Luhn validation), SSNs, emails, phone numbers, and secrets.
+
+    Returns:
+        tuple[str, dict[str, str]]: (redacted_text, placeholder_mapping)
+    """
+    if not text:
+        return "", {}
+
+    mapping: dict[str, str] = {}
+    counter: dict[str, int] = {"secret": 0, "email": 0, "ssn": 0, "card": 0, "phone": 0}
+
+    def _replace_secret(match: re.Match[str]) -> str:
+        counter["secret"] += 1
+        val = match.group(0)
+        ph = f"[REDACTED_SECRET_{counter['secret']}]"
+        mapping[ph] = val
+        return ph
+
+    def _replace_email(match: re.Match[str]) -> str:
+        counter["email"] += 1
+        val = match.group(0)
+        ph = f"[REDACTED_EMAIL_{counter['email']}]"
+        mapping[ph] = val
+        return ph
+
+    def _replace_ssn(match: re.Match[str]) -> str:
+        counter["ssn"] += 1
+        val = match.group(0)
+        ph = f"[REDACTED_SSN_{counter['ssn']}]"
+        mapping[ph] = val
+        return ph
+
+    def _replace_card(match: re.Match[str]) -> str:
+        raw_val = match.group(0)
+        digits_only = re.sub(r"[\s-]", "", raw_val)
+        if luhn_checksum_valid(digits_only):
+            counter["card"] += 1
+            ph = f"[REDACTED_CARD_{counter['card']}]"
+            mapping[ph] = raw_val
+            return ph
+        return raw_val
+
+    def _replace_phone(match: re.Match[str]) -> str:
+        counter["phone"] += 1
+        val = match.group(0)
+        ph = f"[REDACTED_PHONE_{counter['phone']}]"
+        mapping[ph] = val
+        return ph
+
+    redacted = _API_KEY_REGEX.sub(_replace_secret, text)
+    redacted = _EMAIL_REGEX.sub(_replace_email, redacted)
+    redacted = _SSN_REGEX.sub(_replace_ssn, redacted)
+    redacted = _CREDIT_CARD_REGEX.sub(_replace_card, redacted)
+    redacted = _PHONE_REGEX.sub(_replace_phone, redacted)
+    return redacted, mapping
+
+
+def restore_pii_mapping(text: str, mapping: dict[str, str]) -> str:
+    """Restores masked placeholders back to original values in user-facing answers."""
+    if not text or not mapping:
+        return text
+    restored = text
+    for ph, orig in mapping.items():
+        restored = restored.replace(ph, orig)
+
+    # If unnumbered placeholders were produced and exactly one mapping value exists for that type, restore it
+    for ph_type, singular in [
+        ("[REDACTED_EMAIL]", "email"),
+        ("[REDACTED_CARD]", "card"),
+        ("[REDACTED_PHONE]", "phone"),
+        ("[REDACTED_SSN]", "ssn"),
+        ("[REDACTED_SECRET]", "secret"),
+    ]:
+        if ph_type in restored:
+            matching = [v for k, v in mapping.items() if singular in k.lower()]
+            if len(matching) == 1:
+                restored = restored.replace(ph_type, matching[0])
+
+    return restored
+
+
 def redact_pii(text: str) -> str:
     """Masks payment card numbers, SSNs, emails, phone numbers, and API tokens."""
     if not text:
         return ""
 
-    redacted = _API_KEY_REGEX.sub("[REDACTED_SECRET]", text)
-    redacted = _EMAIL_REGEX.sub("[REDACTED_EMAIL]", redacted)
-    redacted = _SSN_REGEX.sub("[REDACTED_SSN]", redacted)
-    redacted = _CREDIT_CARD_REGEX.sub("[REDACTED_CARD]", redacted)
-    redacted = _PHONE_REGEX.sub("[REDACTED_PHONE]", redacted)
+    redacted, _ = redact_pii_with_mapping(text)
+    redacted = re.sub(r"\[REDACTED_SECRET_\d+\]", "[REDACTED_SECRET]", redacted)
+    redacted = re.sub(r"\[REDACTED_EMAIL_\d+\]", "[REDACTED_EMAIL]", redacted)
+    redacted = re.sub(r"\[REDACTED_SSN_\d+\]", "[REDACTED_SSN]", redacted)
+    redacted = re.sub(r"\[REDACTED_CARD_\d+\]", "[REDACTED_CARD]", redacted)
+    redacted = re.sub(r"\[REDACTED_PHONE_\d+\]", "[REDACTED_PHONE]", redacted)
     return redacted
 
 
@@ -137,7 +236,7 @@ async def check_llm_injection(text: str) -> tuple[bool, str]:
         return False, f"LLM check error: {e}"
 
 
-def filter_canary_and_leaks(output_text: str) -> str:
+def filter_canary_and_leaks(output_text: str, pii_mapping: dict[str, str] | None = None) -> str:
     """Detects and suppresses canary token leaks or raw system prompt disclosure."""
     if not output_text:
         return ""
@@ -155,4 +254,10 @@ def filter_canary_and_leaks(output_text: str) -> str:
         if sig in output_text:
             return "I am an automated customer support assistant. I cannot disclose internal system prompts or hidden developer instructions."
 
-    return redact_pii(output_text)
+    # Redact raw PII first
+    cleaned = redact_pii(output_text)
+    # Restore mapped placeholders for user-facing answer if mapping provided
+    if pii_mapping:
+        cleaned = restore_pii_mapping(cleaned, pii_mapping)
+
+    return cleaned

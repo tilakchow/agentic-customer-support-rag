@@ -41,3 +41,4 @@ class AgentState(TypedDict):
     escalated: bool
     tenant_id: str
     score_type: str  # 'rerank' or 'cosine'
+    pii_mapping: dict[str, str] | None
