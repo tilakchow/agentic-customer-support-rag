@@ -16,7 +16,7 @@ from agenticrag.nodes import (
     search_web,
 )
 from agenticrag.routing import decide_after_kb_grade
-from agenticrag.schemas import ScopeDecision
+from agenticrag.schemas import EvidenceGrade, ScopeDecision
 
 
 @pytest.mark.asyncio
@@ -120,6 +120,7 @@ async def test_retrieve_kb_with_reranker_success():
         assert result["kb_docs"][0].page_content == "Cancel order instructions"
         assert result["kb_docs"][0].metadata["rerank_score"] == 0.98
         assert result["top_similarity_score"] == 0.98
+        assert result["score_type"] == "rerank"
 
 
 @pytest.mark.asyncio
@@ -147,6 +148,7 @@ async def test_retrieve_kb_reranker_fallback_on_exception():
         assert len(result["kb_docs"]) == 4
         assert result["kb_docs"][0].page_content == "Top vector match"
         assert result["kb_docs"][0].metadata["score"] == 0.85
+        assert result["score_type"] == "cosine"
 
 
 def test_warm_up_clients_handles_missing_keys_gracefully():
@@ -175,10 +177,12 @@ async def test_grade_kb_evidence_skip_grader_score():
         "messages": [HumanMessage(content="What is the shipping cost?")],
         "kb_docs": [
             Document(
-                page_content="Free shipping over $50", metadata={"source": "faq", "score": 0.92}
+                page_content="Free shipping over $50",
+                metadata={"source": "faq", "rerank_score": 0.92},
             )
         ],
         "top_similarity_score": 0.92,
+        "score_type": "rerank",
     }
     with (
         patch("agenticrag.nodes.get_settings") as mock_settings,
@@ -188,6 +192,30 @@ async def test_grade_kb_evidence_skip_grader_score():
         result = await grade_kb_evidence(state)
         assert result["kb_grade"] == "good"
         mock_grader.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_grade_kb_evidence_cosine_score_never_skips_grader():
+    """Cosine score (even if >= threshold) must NOT skip LLM grader because score scales differ."""
+    state = {
+        "messages": [HumanMessage(content="What is the shipping cost?")],
+        "kb_docs": [
+            Document(
+                page_content="Free shipping over $50", metadata={"source": "faq", "score": 0.92}
+            )
+        ],
+        "top_similarity_score": 0.92,
+        "score_type": "cosine",
+    }
+    with (
+        patch("agenticrag.nodes.get_settings") as mock_settings,
+        patch("agenticrag.nodes.get_grader_llm") as mock_grader,
+    ):
+        mock_settings.return_value.skip_grader_score = 0.85
+        mock_grader.return_value.ainvoke = AsyncMock(return_value=EvidenceGrade(grade="good"))
+        result = await grade_kb_evidence(state)
+        assert result["kb_grade"] == "good"
+        mock_grader.assert_called_once()
 
 
 @pytest.mark.asyncio

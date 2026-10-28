@@ -1,13 +1,15 @@
 """Unified KB retrieval and neural reranking logic for graph nodes and evaluation scripts."""
 
 import logging
-from typing import Any, NamedTuple
+from typing import Any, Literal, NamedTuple
 
 from langchain_core.documents import Document
+from tenacity import retry, retry_if_exception, stop_after_delay, wait_random_exponential
 
 from agenticrag.clients import get_pinecone_client, get_vectorstore
 from agenticrag.config import Settings, get_settings
 from agenticrag.constants import RETRIEVER_K
+from agenticrag.telemetry import get_telemetry_collector
 
 logger = logging.getLogger(__name__)
 
@@ -17,6 +19,39 @@ class RetrievalResult(NamedTuple):
 
     docs: list[Document]
     top_score: float
+    score_type: Literal["rerank", "cosine"] = "cosine"
+
+
+def _is_retryable_rerank_error(exc: BaseException) -> bool:
+    """Returns True if exception is a rate limit or transient service error."""
+    err_str = str(exc)
+    return (
+        "429" in err_str
+        or "RESOURCE_EXHAUSTED" in err_str
+        or "Rate limit" in err_str
+        or "timeout" in err_str.lower()
+    )
+
+
+@retry(
+    reraise=True,
+    stop=stop_after_delay(3.0),
+    wait=wait_random_exponential(multiplier=0.1, max=1.0),
+    retry=retry_if_exception(_is_retryable_rerank_error),
+)
+def _rerank_with_retry(
+    pc: Any,
+    model: str,
+    query: str,
+    documents: list[str],
+    top_n: int,
+) -> Any:
+    return pc.inference.rerank(
+        model=model,
+        query=query,
+        documents=documents,
+        top_n=top_n,
+    )
 
 
 def retrieve_kb(
@@ -41,7 +76,7 @@ def retrieve_kb(
         reranker_enabled: Override for settings.reranker_enabled.
 
     Returns:
-        RetrievalResult containing the top-k documents and top similarity score.
+        RetrievalResult containing the top-k documents, top similarity score, and score_type.
     """
     settings = settings or get_settings()
     vs = vectorstore if vectorstore is not None else get_vectorstore()
@@ -65,30 +100,20 @@ def retrieve_kb(
 
     docs: list[Document] = []
     top_score = 0.0
+    score_type: Literal["rerank", "cosine"] = "cosine"
 
     if use_rerank and len(candidate_docs) > k:
         try:
             pc = pinecone_client if pinecone_client is not None else get_pinecone_client()
             if pc and hasattr(pc, "inference"):
                 doc_texts = [d.page_content for d in candidate_docs]
-                rerank_res = None
-                for attempt in range(4):
-                    try:
-                        rerank_res = pc.inference.rerank(
-                            model=settings.rerank_model,
-                            query=query,
-                            documents=doc_texts,
-                            top_n=k,
-                        )
-                        break
-                    except Exception as err:
-                        err_str = str(err)
-                        if ("429" in err_str or "RESOURCE_EXHAUSTED" in err_str) and attempt < 3:
-                            import time
-
-                            time.sleep(1.5 * (attempt + 1))
-                            continue
-                        raise
+                rerank_res = _rerank_with_retry(
+                    pc=pc,
+                    model=settings.rerank_model,
+                    query=query,
+                    documents=doc_texts,
+                    top_n=k,
+                )
 
                 reranked_docs: list[Document] = []
                 for item in getattr(rerank_res, "data", []):
@@ -100,21 +125,35 @@ def retrieve_kb(
                 if reranked_docs:
                     docs = reranked_docs
                     top_score = max(float(d.metadata.get("rerank_score", 0.0)) for d in docs)
+                    score_type = "rerank"
             else:
                 docs = candidate_docs[:k]
                 if docs:
                     top_score = max(float(d.metadata.get("score", 0.0)) for d in docs)
+                score_type = "cosine"
         except Exception as rerank_err:
             logger.warning(
                 "[KB Retriever Rerank Error]: %s. Falling back to vector similarity ranking.",
                 rerank_err,
             )
+            try:
+                get_telemetry_collector().record_fail_decision(
+                    node_name="retrieve_kb_reranker",
+                    error_type=type(rerank_err).__name__,
+                    mode="fallback_to_cosine",
+                    details=str(rerank_err),
+                )
+            except Exception as tel_err:
+                logger.debug("[Telemetry Non-fatal]: %s", tel_err)
+
             docs = candidate_docs[:k]
             if docs:
                 top_score = max(float(d.metadata.get("score", 0.0)) for d in docs)
+            score_type = "cosine"
     else:
         docs = candidate_docs[:k]
         if docs:
             top_score = max(float(d.metadata.get("score", 0.0)) for d in docs)
+        score_type = "cosine"
 
-    return RetrievalResult(docs=docs, top_score=top_score)
+    return RetrievalResult(docs=docs, top_score=top_score, score_type=score_type)

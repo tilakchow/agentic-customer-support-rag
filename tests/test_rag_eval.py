@@ -137,13 +137,14 @@ async def test_high_similarity_score_skips_grader():
     docs = [
         Document(
             page_content="Standard delivery takes 3 to 5 business days.",
-            metadata={"source": "shipping_faq", "score": 0.65},
+            metadata={"source": "shipping_faq", "rerank_score": 0.65},
         )
     ]
     state = {
         "messages": [HumanMessage(content="How long does standard delivery take?")],
         "kb_docs": docs,
         "top_similarity_score": 0.65,
+        "score_type": "rerank",
     }
 
     with patch("agenticrag.nodes.get_grader_llm") as mock_grader:

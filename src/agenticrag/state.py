@@ -40,3 +40,4 @@ class AgentState(TypedDict):
     ticket_payload: dict[str, Any] | None
     escalated: bool
     tenant_id: str
+    score_type: str  # 'rerank' or 'cosine'

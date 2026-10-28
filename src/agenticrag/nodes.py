@@ -291,6 +291,7 @@ async def retrieve_kb(state: AgentState) -> dict[str, Any]:
     kb_retrieval_failed = False
     docs: list[Document] = []
     top_score = 0.0
+    score_type = "cosine"
 
     try:
         settings = get_settings()
@@ -301,6 +302,7 @@ async def retrieve_kb(state: AgentState) -> dict[str, Any]:
                 "kb_docs": [],
                 "kb_retrieval_failed": True,
                 "top_similarity_score": 0.0,
+                "score_type": "cosine",
             }
 
         pc = await asyncio.to_thread(get_pinecone_client) if settings.reranker_enabled else None
@@ -317,17 +319,20 @@ async def retrieve_kb(state: AgentState) -> dict[str, Any]:
         )
         docs = res.docs
         top_score = res.top_score
+        score_type = res.score_type
     except Exception as e:
         logger.error("[KB Retriever Error]: %s", e, exc_info=True)
         record_provider_failure(e)
         kb_retrieval_failed = True
         docs = []
         top_score = 0.0
+        score_type = "cosine"
 
     logger.info(
-        "[KB Retriever] Retrieved: %d chunks (top_score=%.4f, failed=%s, query_len=%d)",
+        "[KB Retriever] Retrieved: %d chunks (top_score=%.4f, score_type=%s, failed=%s, query_len=%d)",
         len(docs),
         top_score,
+        score_type,
         kb_retrieval_failed,
         len(query),
     )
@@ -349,6 +354,7 @@ async def retrieve_kb(state: AgentState) -> dict[str, Any]:
         "kb_docs": docs,
         "kb_retrieval_failed": kb_retrieval_failed,
         "top_similarity_score": top_score,
+        "score_type": score_type,
     }
 
 
@@ -361,14 +367,15 @@ async def grade_kb_evidence(state: AgentState) -> dict[str, Any]:
         return {"kb_grade": "weak"}
 
     settings = get_settings()
-    # Skip the KB grader LLM call when top similarity score is above the configured threshold
-    if settings.skip_grader_score is not None:
+    score_type = state.get("score_type", "cosine")
+    # Bypass the KB grader LLM call ONLY when score_type == "rerank" and top score is above threshold
+    if score_type == "rerank" and settings.skip_grader_score is not None:
         top_score = state.get("top_similarity_score")
         if top_score is None:
-            top_score = max((float(d.metadata.get("score", 0.0)) for d in docs), default=0.0)
+            top_score = max((float(d.metadata.get("rerank_score", 0.0)) for d in docs), default=0.0)
         if top_score >= settings.skip_grader_score:
             logger.info(
-                "[KB Grader] Top similarity score %.4f >= threshold %.4f. Skipping LLM call and marking good.",
+                "[KB Grader] Top rerank score %.4f >= threshold %.4f. Skipping LLM call and marking good.",
                 top_score,
                 settings.skip_grader_score,
             )
