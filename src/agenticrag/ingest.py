@@ -1,7 +1,7 @@
 """Idempotent ingestion pipeline for Bitext customer support dataset into Pinecone.
 
 Includes content hash-diffing, effective date and KB version metadata enrichment,
-and semantic cache synchronization.
+and exact-match response cache synchronization.
 """
 
 import hashlib

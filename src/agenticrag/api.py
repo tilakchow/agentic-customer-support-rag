@@ -4,10 +4,11 @@ import logging
 import re
 import uuid
 from contextlib import asynccontextmanager
+from typing import Any
 
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import StreamingResponse
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import AIMessage, HumanMessage
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from starlette.middleware.cors import CORSMiddleware
@@ -322,23 +323,57 @@ async def chat_endpoint(
 
     from agenticrag.cache import get_response_cache
 
-    cached = get_response_cache().get(
-        query=body.message,
-        tenant_id=user.tenant_id,
-        kb_version=get_settings().kb_version,
-    )
-    if cached:
-        logger.info("[Cache Hit] Returning cached response for thread_id=%s", thread_id)
-        return ChatResponse(
-            response=cached["response"],
-            thread_id=thread_id,
-            source_used="cached_kb",
-            ticket_payload=cached.get("ticket_payload"),
-            sources=cached.get("sources"),
-        )
-
     agent_app = get_current_agent()
     config = {"configurable": {"thread_id": thread_id}}
+
+    # Inspect checkpoint history to determine if this is the first turn
+    prior_messages: list[Any] = []
+    try:
+        current_state = await agent_app.aget_state(config)
+        if current_state and current_state.values:
+            prior_messages = current_state.values.get("messages", [])
+    except Exception as state_err:
+        logger.debug(
+            "[State Inspection] Unable to retrieve state for thread %s: %s", thread_id, state_err
+        )
+
+    is_first_turn = len(prior_messages) == 0
+
+    if is_first_turn:
+        cached = get_response_cache().get(
+            query=body.message,
+            tenant_id=user.tenant_id,
+            kb_version=get_settings().kb_version,
+        )
+        if cached:
+            logger.info("[Cache Hit] Returning cached response for thread_id=%s", thread_id)
+            # Append Human + AI messages to checkpoint so subsequent turns see conversation history
+            try:
+                await agent_app.aupdate_state(
+                    config,
+                    {
+                        "messages": [
+                            HumanMessage(content=body.message),
+                            AIMessage(content=cached["response"]),
+                        ],
+                        "tenant_id": user.tenant_id,
+                        "source_used": "cached_kb",
+                    },
+                )
+            except Exception as update_err:
+                logger.warning(
+                    "[Cache Update State] Failed to update checkpoint state on cache hit: %s",
+                    update_err,
+                )
+
+            return ChatResponse(
+                response=cached["response"],
+                thread_id=thread_id,
+                source_used="cached_kb",
+                ticket_payload=cached.get("ticket_payload"),
+                sources=cached.get("sources"),
+            )
+
     try:
         result = await agent_app.ainvoke(
             {
@@ -386,7 +421,7 @@ async def chat_endpoint(
             sources=sources,
         )
 
-        if source in ("private_kb", "direct", "out_of_scope_refusal"):
+        if is_first_turn and source in ("private_kb", "direct", "out_of_scope_refusal"):
             get_response_cache().set(
                 query=body.message,
                 response_data={

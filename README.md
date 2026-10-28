@@ -25,7 +25,7 @@ Instead of static, linear retrieval that blindly passes top-k documents to an LL
 - **Canary String & Leak Suppression (`CANARY_TOKEN`)**: Embedded canary token in internal system prompts is actively filtered from all streaming token buffers and final completions.
 - **Comprehensive PII Redaction (`redact_pii`)**: Masks credit cards, SSNs, phone numbers, emails, and API secrets before persistence, checkpointing, or human escalation ticketing.
 - **Multi-Tenant Isolation & JWT Auth**: JWT-extracted `tenant_id` and `user_id` partition Pinecone namespaces and enforce strict thread ownership, preventing cross-user and cross-tenant session hijacking.
-- **Semantic Response Cache & Hash-Diff Ingestion**: Cache partitioned by `(kb_version, tenant_id, query_hash)` accelerates repeated queries with sub-millisecond responses; ingestion hash-diffing skips 100% of unchanged chunks on incremental runs.
+- **Exact-Match Response Cache (First-Turn Only) & Hash-Diff Ingestion**: Cache partitioned by `(kb_version, tenant_id, query_hash)` accelerates repeated first-turn queries with sub-millisecond responses; ingestion hash-diffing skips 100% of unchanged chunks on incremental runs.
 - **Per-Node Observability Spans & Hardened Health**: Distributed telemetry collector captures token counts, latency, estimated cost, route decisions, and KB versions per node; `/health/detailed` isolates internal diagnostics behind authentication.
 
 ---
@@ -102,7 +102,7 @@ graph TD
 | **LLM Inference** | Groq (`openai/gpt-oss-20b`) | Low-latency inference with streaming token generation. |
 | **Web Search** | Tavily Search API | Targeted search optimized for LLM context synthesis. |
 | **Auth & Tenancy** | JWT (HMAC-SHA256) | Scoped authentication and thread-to-user access control. |
-| **Caching** | Semantic Response Cache | LRU memory/Redis cache keyed by `(kb_version, tenant, query_hash)`. |
+| **Caching** | Exact-Match Response Cache (First-Turn Only) | LRU memory/Redis cache keyed by `(kb_version, tenant, query_hash)`. |
 | **Observability** | Telemetry Spans & Health | Per-node token/cost/latency spans and rolling failure tracker. |
 | **Frontend UI** | React 19, Vite, Tailwind CSS v4 | High-performance user interface with real-time SSE streaming. |
 

@@ -1,6 +1,6 @@
-"""Semantic and exact response cache partitioned by KB version and tenant identity.
+"""Exact-match response cache (first-turn only) partitioned by KB version and tenant identity.
 
-Provides fast sub-millisecond responses for repeated queries, with automatic
+Provides fast sub-millisecond responses for repeated first-turn queries, with automatic
 invalidation whenever the knowledge base version advances.
 """
 
