@@ -1,4 +1,4 @@
-import { proxyToBackend } from '../_proxy'
+import { proxyToBackend } from '../_proxy.js'
 
 export const config = {
   runtime: 'edge',

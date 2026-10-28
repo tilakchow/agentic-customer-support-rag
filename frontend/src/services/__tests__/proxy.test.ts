@@ -72,4 +72,43 @@ describe('Edge Proxy Security & Rate Limiting Helpers', () => {
       expect(getClientIp(req)).toBe('127.0.0.1')
     })
   })
+
+  describe('API Route Handlers Method & Configuration Verification', () => {
+    it('verifies chat handler enforces POST method', async () => {
+      const { default: chatHandler } = await import('../../../api/chat.js')
+      const getReq = new Request('https://example.com/api/chat', { method: 'GET' })
+      const res = await chatHandler(getReq)
+      expect(res.status).toBe(405)
+      const data = await res.json()
+      expect(data.error).toBe('Method not allowed')
+    })
+
+    it('verifies chat-stream handler enforces POST method', async () => {
+      const { default: streamHandler } = await import('../../../api/chat-stream.js')
+      const getReq = new Request('https://example.com/api/chat-stream', { method: 'GET' })
+      const res = await streamHandler(getReq)
+      expect(res.status).toBe(405)
+      const data = await res.json()
+      expect(data.error).toBe('Method not allowed')
+    })
+
+    it('verifies kb/search handler enforces POST method', async () => {
+      const { default: searchHandler } = await import('../../../api/kb/search.js')
+      const getReq = new Request('https://example.com/api/kb/search', { method: 'GET' })
+      const res = await searchHandler(getReq)
+      expect(res.status).toBe(405)
+      const data = await res.json()
+      expect(data.error).toBe('Method not allowed')
+    })
+
+    it('verifies health and kb/info handlers are functions and have edge config', async () => {
+      const { default: healthHandler, config: healthConfig } = await import('../../../api/health.js')
+      const { default: infoHandler, config: infoConfig } = await import('../../../api/kb/info.js')
+      expect(typeof healthHandler).toBe('function')
+      expect(healthConfig.runtime).toBe('edge')
+      expect(typeof infoHandler).toBe('function')
+      expect(infoConfig.runtime).toBe('edge')
+    })
+  })
 })
+
