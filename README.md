@@ -104,7 +104,10 @@ flowchart TD
 - **Condense (`condense_query`):** Reformulates multi-turn context (e.g., "what about shipping?") into a standalone search query.
 - **Grader bypass (`grade_kb_evidence`):** If cross-encoder score $\ge 0.45$, the LLM evidence grader is skipped (applies to 98.6% of in-KB queries). Low-scoring evidence is evaluated by LLM.
 - **Web search fallback (`search_web`):** Disabled by default (`WEB_FALLBACK_ENABLED=false`). When enabled, executes only on ambiguous queries that pass policy and legal blacklists.
-- **Claim check (`generate_from_kb`):** Every KB answer undergoes a post-generation verification check to confirm assertions are supported by source passages.
+- **Claim check & cheap pre-check (`generate_from_kb`):** Extracts numbers, URLs, emails, currencies, and phone numbers before running LLM verification. If all extracted entities match the retrieved context, the expensive LLM check is bypassed, saving ~800 tokens on verified grounded answers.
+- **Classifier history truncation:** Limits context passed to `classify_scope`, `route_question`, and tool planning to the last 4 turns with assistant messages truncated to 200 characters, saving ~50-80% input tokens in multi-turn dialogues.
+- **Context preamble stripping:** Strips redundant `User Request:` prompt templates from retrieved KB chunks, passing only the recommended response text to the generator (~72 tokens/query saved).
+- **Hybrid BM25 + Dense retrieval (`retrieve`):** Evaluated in-memory BM25 with Reciprocal Rank Fusion ($k=60$) behind `HYBRID_RETRIEVAL_ENABLED` (default `false` as dense baseline demonstrated higher precision on customer support benchmarks).
 
 <details>
 <summary><b>View complete 15-node execution table & fail modes</b></summary>
@@ -141,6 +144,22 @@ Empirical results from automated evaluation suites. Evaluated against the Bitext
 | **Operational Tool Benchmark** | $\ge 0.95$ | **1.000** (20/20 orders & tickets, $n=20$) | ✅ Passing |
 | **End-to-End Latency p50** | $< 2.5\text{s}$ | **3.131s** ($n=12$; KB: 3.131s, Direct: 2.506s) | ❌ Missed |
 | **End-to-End Latency p95** | $< 5.0\text{s}$ | **37.822s** ($n=12$; KB: 6.257s, Direct: 9.462s) | ❌ Missed |
+
+
+### 📉 Token & Cost Optimization Breakdown (T0 Baseline vs Optimized)
+
+Measured using live telemetry on a 40-query stratified dev split (`evals/tokens.json`). Optimized runs incorporate role-specific reasoning caps (T1), classifier history truncation (T2), cheap entity pre-checks (T3), and prompt compression (T4).
+
+| Execution Path | Baseline Tokens (Mean) | Baseline Calls | Optimized Tokens (Mean) | Optimized Calls | Token Delta (%) |
+| :--- | :---: | :---: | :---: | :---: | :---: |
+| **Knowledge Base (KB)** | 5,230.5 | 5.00 | **4,802.6** | 5.71 | **-8.2%** |
+| **Operational Tools** | 2,716.9 | 4.12 | **2,533.5** | 4.12 | **-6.7%** |
+| **Direct Answer (Chit-chat)** | 1,464.8 | 3.00 | **1,427.2** | 3.00 | **-2.6%** |
+| **Insufficient Evidence** | 2,493.8 | 4.20 | **895.3** | 1.67 | **-64.1%** |
+| **Escalate to Human** | 1,310.4 | 1.25 | **128.7** | 0.29 | **-90.2%** |
+| **Out-of-Scope Refusal** | 172.5 | 0.33 | **160.3** | 0.33 | **-7.1%** |
+| **Query-Wide Average** | **2,372.2** | **3.02** | **1,742.1** | **2.62** | **-26.6% (-630 tok/q)** |
+
 
 ---
 
@@ -273,9 +292,12 @@ agentic-customer-support-rag/
 │   └── tools.py             # Deterministic order status & support ticket tools
 ├── evals/                   # Evaluation harnesses & scoreboard
 │   ├── SCOREBOARD.md        # Definitive metric tracker with confidence intervals
+│   ├── token_report.py      # Per-node & per-path token distributions & LLM call telemetry
+│   ├── hallucination_eval.py # Grounding entity pre-check & hallucination benchmark
+│   ├── hybrid_eval.py       # BM25 + Dense RRF fusion evaluation on hard queries
 │   ├── retrieval_eval.py    # Recall@4, Precision@4, MRR, and grader bypass sweep
 │   ├── adversarial_eval.py  # 52 prompt injection and jailbreak attack tests
-│   ├── answer_quality_eval.py # Faithfulness claim check verification
+│   ├── answer_quality_eval.py # LLM-as-a-judge groundedness, tone, and correctness
 │   └── tool_use_eval.py     # 20 operational order and ticket benchmarks
 ├── frontend/                # React 19 single-page application
 │   ├── src/                 # Chat interface, source attribution drawer, theme toggle
@@ -306,7 +328,7 @@ agentic-customer-support-rag/
 ## ⚠️ Known limitations
 
 - **Synthetic Evaluation Dataset:** Benchmarks are measured on Bitext customer support data augmented with synthetic queries. Real enterprise distributions may vary.
-- **Small Sample Sizes on Edge Splits:** Certain evaluation subsets (e.g. faithfulness $n=4$, escalation $n=8$) have small sample counts, leading to wider confidence intervals.
+- **Evaluated Sample Counts:** While core retrieval ($n=82/36$), adversarial ($n=52$), hallucination cases ($n=24$), answer quality ($n=20$), and tool suites ($n=20$) are systematically evaluated, smaller edge splits (e.g. escalation $n=8$, multi-turn $n=12$) have wider confidence intervals.
 - **Heuristic Injection Defense:** Regex and LLM classifier filters provide defense-in-depth but cannot mathematically guarantee 100% protection against novel adversarial jailbreaks.
 - **Web Fallback Lacks Claim Verification:** Responses generated via Tavily web search bypass the post-generation claim-support verification applied to KB answers.
 - **In-Memory Tool Stores:** The mock order database and support ticket registry run in memory; production requires persistent PostgreSQL/Redis backing.
