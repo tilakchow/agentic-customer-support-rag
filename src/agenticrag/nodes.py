@@ -721,6 +721,63 @@ async def _generate_support_message(
         return {"messages": [AIMessage(content=fallback_text)], "source_used": target_source}
 
 
+def cheap_faithfulness_precheck(context: str, response: str) -> tuple[bool, list[str]]:
+    """Extracts numbers, URLs, emails, and phone numbers from response and verifies each appears in context.
+
+    Returns:
+        (passed, missing_entities): passed is True if all extracted entities appear in context.
+    """
+    if not response or not context:
+        return True, []
+
+    entities: set[str] = set()
+
+    # URLs
+    urls = re.findall(r'https?://[^\s<>"\'\)]+|www\.[^\s<>"\'\)]+', response)
+    for u in urls:
+        entities.add(u.lower().rstrip(".,;:"))
+
+    # Emails
+    emails = re.findall(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b", response)
+    for e in emails:
+        entities.add(e.lower())
+
+    # Phone numbers (at least 7-10 digits, formatted or raw)
+    phones = re.findall(r"(?:\+?\d{1,3}[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}\b", response)
+    for p in phones:
+        clean_p = re.sub(r"[-.\s\(\)]", "", p)
+        if len(clean_p) >= 10:
+            entities.add(clean_p)
+
+    # Currencies (e.g. $50, $15.99)
+    currencies = re.findall(r"\$\s*\d+(?:\.\d{2})?", response)
+    for c in currencies:
+        entities.add(c.replace(" ", ""))
+
+    # Numbers (integers or decimals)
+    numbers = re.findall(r"\b\d+(?:\.\d+)?\b", response)
+    for n in numbers:
+        entities.add(n)
+
+    context_lower = context.lower()
+    context_digits = re.sub(r"[-.\s\(\)]", "", context)
+
+    missing = []
+    for ent in sorted(entities):
+        if ent.isdigit() and len(ent) >= 10:
+            if ent not in context_digits:
+                missing.append(ent)
+        elif ent.startswith("$"):
+            num_part = ent[1:]
+            if ent not in context_lower and num_part not in context_lower:
+                missing.append(ent)
+        else:
+            if ent.lower() not in context_lower:
+                missing.append(ent)
+
+    return len(missing) == 0, missing
+
+
 async def check_claim_support(question: str, context: str, response: str) -> ClaimSupportCheck:
     """Evaluates whether all factual statements in the response are grounded in the reference context."""
     if not context or not response:
@@ -783,11 +840,22 @@ async def generate_from_kb(state: AgentState) -> dict[str, Any]:
     messages = [SystemMessage(content=system_text), HumanMessage(content=human_text)]
     result = await _generate_support_message(messages, DEFAULT_UNAVAILABLE_APOLOGY, "private_kb")
 
-    # Post-generation faithfulness guardrail (M2 enforcement)
+    # Post-generation faithfulness guardrail (M2 enforcement + T3 cheap pre-check)
     ai_msgs = result.get("messages", [])
     if ai_msgs and context.strip():
         ans_text = _message_text(ai_msgs[-1])
         try:
+            precheck_passed, missing_entities = cheap_faithfulness_precheck(context, ans_text)
+            if precheck_passed:
+                logger.info(
+                    "[Faithfulness Guardrail] Cheap pre-check passed: all numbers, URLs, emails, and phones verified in context. Skipping LLM check."
+                )
+                return result
+
+            logger.info(
+                "[Faithfulness Guardrail] Cheap pre-check flagged missing entities: %s. Invoking LLM check_claim_support.",
+                missing_entities,
+            )
             check = await check_claim_support(question=question, context=context, response=ans_text)
             if not check.supported:
                 unsupported_str = (

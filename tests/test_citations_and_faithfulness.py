@@ -254,3 +254,36 @@ def test_faithfulness_benchmark_dataset_distribution_and_wilson_ci():
     lower, upper = wilson_score_interval(0.90, 40, confidence=0.95)
     assert 0.70 < lower < 0.90
     assert 0.90 < upper <= 1.0
+
+
+def test_cheap_faithfulness_precheck():
+    """Validates cheap_faithfulness_precheck identifies invented fees, phones, timeframes, and allows grounded entities."""
+    from agenticrag.nodes import cheap_faithfulness_precheck
+
+    ctx = "Return window is 30 days. Contact support@company.com or visit https://company.com/help. No cancellation fee applies."
+
+    # Grounded answer: all entities in context
+    grounded_ans = (
+        "You have 30 days to return. Reach us at support@company.com or https://company.com/help."
+    )
+    passed, missing = cheap_faithfulness_precheck(ctx, grounded_ans)
+    assert passed is True
+    assert missing == []
+
+    # Invented fee
+    fee_ans = "A $25 restocking fee applies to all returns."
+    passed, missing = cheap_faithfulness_precheck(ctx, fee_ans)
+    assert passed is False
+    assert "$25" in missing or "25" in missing
+
+    # Invented phone number
+    phone_ans = "Please call our hotline at 1-800-555-0199 for help."
+    passed, missing = cheap_faithfulness_precheck(ctx, phone_ans)
+    assert passed is False
+    assert any("555" in m or "0199" in m or "18005550199" in m for m in missing)
+
+    # Invented timeframe
+    time_ans = "You can return your item within 90 days."
+    passed, missing = cheap_faithfulness_precheck(ctx, time_ans)
+    assert passed is False
+    assert "90" in missing
