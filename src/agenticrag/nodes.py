@@ -816,13 +816,26 @@ async def check_claim_support(question: str, context: str, response: str) -> Cla
         return ClaimSupportCheck(supported=True, reason=f"Evaluator error (fail-open): {e}")
 
 
+def extract_kb_doc_response(content: str) -> str:
+    """Extracts only the response portion of a KB document, omitting 'User Request:' framing."""
+    if "Recommended Response:" in content:
+        return content.split("Recommended Response:", 1)[-1].strip()
+    if "Response:" in content:
+        return content.split("Response:", 1)[-1].strip()
+    if content.startswith("User Request:"):
+        lines = content.split("\n", 1)
+        if len(lines) > 1:
+            return lines[1].strip()
+    return content.strip()
+
+
 @traced_node("generate_from_kb")
 async def generate_from_kb(state: AgentState) -> dict[str, Any]:
     """Synthesizes customer response grounded in retrieved internal knowledge base documents with citations."""
     question = get_latest_question(state)
     history = get_conversation_history(state)
     raw_context = "\n\n".join(
-        f"[Source {idx + 1}: {doc.metadata.get('intent', doc.metadata.get('source', 'unknown'))} (id: {doc.metadata.get('id', f'doc-{idx + 1}')})]\n{doc.page_content}"
+        f"[Source {idx + 1}: {doc.metadata.get('intent', doc.metadata.get('source', 'unknown'))} (id: {doc.metadata.get('id', f'doc-{idx + 1}')})]\n{extract_kb_doc_response(doc.page_content)}"
         for idx, doc in enumerate(state.get("kb_docs", []))
     )
     tool_results = state.get("tool_results")

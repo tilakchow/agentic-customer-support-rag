@@ -616,3 +616,20 @@ async def test_rewrite_query_uses_current_query_and_history():
         result = await rewrite_query(state)
         assert result["current_query"] == "how to request product replacement for damaged order 123"
         assert result["retry_count"] == 1
+
+
+def test_extract_kb_doc_response():
+    """extract_kb_doc_response strips User Request preamble and returns only response content."""
+    from agenticrag.nodes import extract_kb_doc_response
+
+    text1 = "User Request: How do I cancel order?\nRecommended Response: You can cancel via account settings."
+    assert extract_kb_doc_response(text1) == "You can cancel via account settings."
+
+    text2 = "User Request: Return policy\nResponse: Items can be returned within 30 days."
+    assert extract_kb_doc_response(text2) == "Items can be returned within 30 days."
+
+    text3 = "User Request: What is your phone number?\nCall 1-800-555-0100."
+    assert extract_kb_doc_response(text3) == "Call 1-800-555-0100."
+
+    plain = "This is a direct doc content without template."
+    assert extract_kb_doc_response(plain) == plain
