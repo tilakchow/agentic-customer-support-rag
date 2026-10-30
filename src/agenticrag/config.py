@@ -63,6 +63,31 @@ class Settings(BaseSettings):
     reranker_enabled: bool = Field(default=True, validation_alias="RERANKER_ENABLED")
     rerank_model: str = Field(default="bge-reranker-v2-m3", validation_alias="RERANK_MODEL")
     rerank_fetch_k: int = Field(default=20, validation_alias="RERANK_FETCH_K")
+    # Reasoning effort & token caps per role
+    reasoning_effort_scope: str | None = Field(
+        default="low", validation_alias="REASONING_EFFORT_SCOPE"
+    )
+    max_tokens_scope: int | None = Field(default=None, validation_alias="MAX_TOKENS_SCOPE")
+    reasoning_effort_router: str | None = Field(
+        default="low", validation_alias="REASONING_EFFORT_ROUTER"
+    )
+    max_tokens_router: int | None = Field(default=None, validation_alias="MAX_TOKENS_ROUTER")
+    reasoning_effort_grader: str | None = Field(
+        default="low", validation_alias="REASONING_EFFORT_GRADER"
+    )
+    max_tokens_grader: int | None = Field(default=None, validation_alias="MAX_TOKENS_GRADER")
+    reasoning_effort_faithfulness: str | None = Field(
+        default="low", validation_alias="REASONING_EFFORT_FAITHFULNESS"
+    )
+    max_tokens_faithfulness: int | None = Field(
+        default=None, validation_alias="MAX_TOKENS_FAITHFULNESS"
+    )
+    reasoning_effort_generation: str | None = Field(
+        default=None, validation_alias="REASONING_EFFORT_GENERATION"
+    )
+    max_tokens_generation: int | None = Field(
+        default=None, validation_alias="MAX_TOKENS_GENERATION"
+    )
     kb_version: str = Field(default="v2.1.0", validation_alias="KB_VERSION")
     jwt_secret: str = Field(default="", validation_alias="JWT_SECRET")
     jwt_issuer: str | None = Field(default=None, validation_alias="JWT_ISSUER")

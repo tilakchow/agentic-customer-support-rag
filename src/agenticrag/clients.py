@@ -17,43 +17,76 @@ _last_retriever_failure_time: float = 0.0
 RETRIEVER_BACKOFF_SECONDS: float = 30.0
 
 
-@lru_cache(maxsize=4)
-def get_llm(model: str | None = None) -> Any:
-    """Lazily initializes ChatGroq LLM client with timeout and max_retries configured."""
+_UNSET = object()
+
+
+@lru_cache(maxsize=16)
+def get_llm(
+    model: str | None = None,
+    reasoning_effort: Any = _UNSET,
+    max_tokens: Any = _UNSET,
+) -> Any:
+    """Lazily initializes ChatGroq LLM client with timeout, retries, reasoning_effort, and max_tokens configured."""
     from langchain_groq import ChatGroq
 
     settings = get_settings()
     selected_model = model or settings.groq_model
-    groq_cls: Any = ChatGroq
-    return groq_cls(
-        model=selected_model,
-        temperature=0,
-        api_key=settings.groq_api_key or None,
-        request_timeout=settings.llm_timeout,
-        max_retries=settings.llm_max_retries,
+    effective_reasoning = (
+        settings.reasoning_effort_generation if reasoning_effort is _UNSET else reasoning_effort
     )
+    effective_max_tokens = settings.max_tokens_generation if max_tokens is _UNSET else max_tokens
+
+    groq_cls: Any = ChatGroq
+    kwargs: dict[str, Any] = {
+        "model": selected_model,
+        "temperature": 0,
+        "api_key": settings.groq_api_key or None,
+        "request_timeout": settings.llm_timeout,
+        "max_retries": settings.llm_max_retries,
+    }
+    if effective_reasoning is not None:
+        kwargs["reasoning_effort"] = effective_reasoning
+    if effective_max_tokens is not None:
+        kwargs["max_tokens"] = effective_max_tokens
+    return groq_cls(**kwargs)
 
 
 def get_classifier_llm():
     """Provides ChatGroq configured with ScopeDecision structured output."""
-    return get_llm().with_structured_output(ScopeDecision, method="json_mode")
+    settings = get_settings()
+    return get_llm(
+        reasoning_effort=settings.reasoning_effort_scope,
+        max_tokens=settings.max_tokens_scope,
+    ).with_structured_output(ScopeDecision, method="json_mode")
 
 
 def get_router_llm():
     """Provides ChatGroq configured with RouteDecision structured output."""
-    return get_llm().with_structured_output(RouteDecision, method="json_mode")
+    settings = get_settings()
+    return get_llm(
+        reasoning_effort=settings.reasoning_effort_router,
+        max_tokens=settings.max_tokens_router,
+    ).with_structured_output(RouteDecision, method="json_mode")
 
 
 def get_grader_llm():
     """Provides ChatGroq configured with EvidenceGrade structured output for evidence grading."""
-    return get_llm().with_structured_output(EvidenceGrade, method="json_mode")
+    settings = get_settings()
+    return get_llm(
+        reasoning_effort=settings.reasoning_effort_grader,
+        max_tokens=settings.max_tokens_grader,
+    ).with_structured_output(EvidenceGrade, method="json_mode")
 
 
 def get_faithfulness_llm(model: str | None = None):
     """Provides ChatGroq configured with ClaimSupportCheck structured output for faithfulness verification."""
     settings = get_settings()
     target_model = model or settings.faithfulness_model
-    return get_llm(model=target_model).with_structured_output(ClaimSupportCheck, method="json_mode")
+    return get_llm(
+        model=target_model,
+        reasoning_effort=settings.reasoning_effort_faithfulness,
+        max_tokens=settings.max_tokens_faithfulness,
+    ).with_structured_output(ClaimSupportCheck, method="json_mode")
 
 
 @lru_cache(maxsize=1)

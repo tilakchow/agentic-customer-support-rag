@@ -181,3 +181,31 @@ def test_metrics_recording_and_reset():
 
     reset_metrics()
     assert get_provider_metrics()["provider_failures"] == 0
+
+
+def test_role_reasoning_effort_and_max_tokens():
+    """get_classifier_llm, get_router_llm, get_grader_llm, and get_faithfulness_llm pass configured reasoning_effort and max_tokens."""
+    from agenticrag.clients import get_classifier_llm, get_faithfulness_llm
+
+    with patch("langchain_groq.ChatGroq") as mock_groq:
+        mock_groq.return_value = MagicMock()
+        _ = get_classifier_llm()
+        assert mock_groq.call_args.kwargs.get("reasoning_effort") == "low"
+
+    reset_clients()
+    with patch("langchain_groq.ChatGroq") as mock_groq:
+        mock_groq.return_value = MagicMock()
+        _ = get_router_llm()
+        assert mock_groq.call_args.kwargs.get("reasoning_effort") == "low"
+
+    reset_clients()
+    with patch("langchain_groq.ChatGroq") as mock_groq:
+        mock_groq.return_value = MagicMock()
+        _ = get_grader_llm()
+        assert mock_groq.call_args.kwargs.get("reasoning_effort") == "low"
+
+    reset_clients()
+    with patch("langchain_groq.ChatGroq") as mock_groq:
+        mock_groq.return_value = MagicMock()
+        _ = get_faithfulness_llm()
+        assert mock_groq.call_args.kwargs.get("reasoning_effort") == "low"
