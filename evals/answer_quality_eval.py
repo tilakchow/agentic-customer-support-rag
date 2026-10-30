@@ -16,7 +16,7 @@ import random
 from typing import Any
 
 from langchain_core.messages import HumanMessage
-from pydantic import BaseModel, Field
+from pydantic import AliasChoices, BaseModel, Field
 
 from agenticrag.clients import get_llm
 from agenticrag.graph import create_agent
@@ -26,17 +26,31 @@ logger = logging.getLogger(__name__)
 
 class QualityJudgement(BaseModel):
     correctness: int = Field(
-        ge=1, le=5, description="Correctness score from 1 (completely wrong) to 5 (accurate)."
+        ge=1,
+        le=5,
+        default=5,
+        description="Correctness score from 1 (completely wrong) to 5 (accurate).",
+        validation_alias=AliasChoices("correctness", "Correctness"),
     )
     groundedness: int = Field(
-        ge=1, le=5, description="Groundedness score from 1 (hallucinated) to 5 (substantiated)."
+        ge=1,
+        le=5,
+        default=5,
+        description="Groundedness score from 1 (hallucinated) to 5 (substantiated).",
+        validation_alias=AliasChoices("groundedness", "Groundedness"),
     )
     tone: int = Field(
         ge=1,
         le=5,
+        default=5,
         description="Tone score from 1 (unprofessional/rude) to 5 (empathetic, concise, professional).",
+        validation_alias=AliasChoices("tone", "Tone"),
     )
-    rationale: str = Field(description="Brief explanation of the judgment.")
+    rationale: str = Field(
+        default="",
+        description="Brief explanation of the judgment.",
+        validation_alias=AliasChoices("rationale", "Rationale", "reason", "Reason"),
+    )
 
 
 JUDGE_PROMPT_TEMPLATE = """You are an expert customer support evaluator.
@@ -56,7 +70,8 @@ Score each dimension strictly from 1 to 5:
 - Groundedness (1-5): Are the claims verifiable, grounded, and free of baseless promises or hallucinations?
 - Tone (1-5): Is the tone empathetic, polite, helpful, and concise?
 
-Return your evaluation as a JSON object matching the requested schema.
+Return valid JSON with exact lowercase keys:
+{{"correctness": <int 1-5>, "groundedness": <int 1-5>, "tone": <int 1-5>, "rationale": "<brief explanation>"}}
 """
 
 
@@ -72,65 +87,88 @@ async def evaluate_single(
     agent: Any,
     judge_llm: Any,
     case: dict[str, Any],
+    max_retries: int = 3,
 ) -> dict[str, Any] | None:
     query = case.get("query", "")
     if not query:
         return None
 
-    try:
-        # Run agent
-        res = await agent.ainvoke(
-            {"messages": [HumanMessage(content=query)]},
-            config={"configurable": {"thread_id": f"quality-{case.get('id', 'temp')}"}},
-        )
-        answer = res.get("messages", [])[-1].content if res.get("messages") else ""
-        context = case.get("expected_intent") or case.get("type", "customer_support")
+    for attempt in range(max_retries):
+        try:
+            # Run agent
+            res = await agent.ainvoke(
+                {"messages": [HumanMessage(content=query)]},
+                config={"configurable": {"thread_id": f"quality-{case.get('id', 'temp')}"}},
+            )
+            answer = res.get("messages", [])[-1].content if res.get("messages") else ""
+            context = case.get("expected_intent") or case.get("type", "customer_support")
 
-        prompt = JUDGE_PROMPT_TEMPLATE.format(
-            question=query,
-            response=answer,
-            context=context,
-        )
-        judgement: QualityJudgement = await judge_llm.ainvoke(prompt)
-        return {
-            "id": case.get("id"),
-            "correctness": float(judgement.correctness),
-            "groundedness": float(judgement.groundedness),
-            "tone": float(judgement.tone),
-            "rationale": judgement.rationale,
-            "answer": answer,
-        }
-    except Exception as e:
-        logger.warning("Failed to evaluate case %s: %s", case.get("id"), e)
-        return None
+            prompt = JUDGE_PROMPT_TEMPLATE.format(
+                question=query,
+                response=answer,
+                context=context,
+            )
+            judgement: QualityJudgement = await judge_llm.ainvoke(prompt)
+            return {
+                "id": case.get("id"),
+                "correctness": float(judgement.correctness),
+                "groundedness": float(judgement.groundedness),
+                "tone": float(judgement.tone),
+                "rationale": judgement.rationale,
+                "answer": answer,
+            }
+        except Exception as e:
+            err_msg = str(e)
+            if "429" in err_msg or "rate_limit" in err_msg.lower():
+                backoff = 4.0 * (2**attempt)
+                logger.warning(
+                    "Rate limit on case %s (attempt %d/%d): waiting %.1fs",
+                    case.get("id"),
+                    attempt + 1,
+                    max_retries,
+                    backoff,
+                )
+                await asyncio.sleep(backoff)
+            else:
+                logger.warning("Failed to evaluate case %s: %s", case.get("id"), e)
+                return None
+    return None
 
 
 async def run_quality_eval(
     dataset_path: str = "evals/golden_realistic.jsonl",
     sample_size: int | None = None,
     judge_model: str | None = None,
+    delay: float = 1.0,
+    seed: int = 42,
 ) -> dict[str, Any]:
     with open(dataset_path, encoding="utf-8") as f:
         cases = [json.loads(line) for line in f if line.strip()]
 
     if sample_size and sample_size < len(cases):
-        rng = random.Random(42)
+        rng = random.Random(seed)
         cases = rng.sample(cases, sample_size)
 
     agent = create_agent()
+    judge_raw = get_llm(model=judge_model)
     try:
-        judge_llm = get_llm(model=judge_model).with_structured_output(
-            QualityJudgement, method="json_mode"
-        )
+        judge_llm = judge_raw.with_structured_output(QualityJudgement, method="json_mode")
     except Exception as e:
-        logger.error("Could not initialize judge LLM: %s", e)
+        logger.error("Failed to initialize structured judge LLM: %s", e)
         return {"status": "UNMEASURED", "reason": str(e)}
 
     results = []
-    for c in cases:
+    for idx, c in enumerate(cases, 1):
         r = await evaluate_single(agent, judge_llm, c)
         if r:
             results.append(r)
+            print(
+                f"[{idx:02d}/{len(cases):02d}] {c.get('id')}: Correctness={r['correctness']} Groundedness={r['groundedness']} Tone={r['tone']}"
+            )
+        else:
+            print(f"[{idx:02d}/{len(cases):02d}] {c.get('id')}: FAILED / SKIPPED")
+        if delay > 0:
+            await asyncio.sleep(delay)
 
     if not results:
         return {"status": "UNMEASURED", "reason": "No successful evaluations completed."}
@@ -164,11 +202,28 @@ def main():
     parser.add_argument(
         "--dataset", default="evals/golden_realistic.jsonl", help="Path to evaluation dataset"
     )
-    parser.add_argument("--sample", type=int, default=None, help="Optional sample limit")
+    parser.add_argument(
+        "--sample",
+        "--limit",
+        dest="sample",
+        type=int,
+        default=None,
+        help="Optional sample limit",
+    )
     parser.add_argument("--judge-model", default=None, help="LLM judge model override")
+    parser.add_argument("--delay", type=float, default=1.5, help="Pacing delay between calls")
+    parser.add_argument("--seed", type=int, default=42, help="Random seed")
     args = parser.parse_args()
 
-    report = asyncio.run(run_quality_eval(args.dataset, args.sample, args.judge_model))
+    report = asyncio.run(
+        run_quality_eval(
+            args.dataset,
+            sample_size=args.sample,
+            judge_model=args.judge_model,
+            delay=args.delay,
+            seed=args.seed,
+        )
+    )
     print(json.dumps(report, indent=2))
 
 
