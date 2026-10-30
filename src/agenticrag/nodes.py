@@ -50,6 +50,7 @@ from agenticrag.retrieval import retrieve_kb as retrieve_kb_documents
 from agenticrag.routing import (
     get_conversation_history,
     get_latest_question,
+    get_truncated_conversation_history,
     is_human_escalation_request,
     is_policy_sensitive_request,
     is_proprietary_policy_query,
@@ -103,7 +104,7 @@ async def classify_scope(state: AgentState) -> dict[str, Any]:
     - 'policy_sensitive': Legal threats, litigation, regulatory filings
     """
     question = get_latest_question(state)
-    history = get_conversation_history(state)
+    history = get_truncated_conversation_history(state)
 
     # Injection and adversarial prompt exfiltration check (fast-path regex + second-layer LLM)
     is_inj, inj_reason = is_prompt_injection(question)
@@ -256,7 +257,7 @@ async def escalate_to_human(state: AgentState) -> dict[str, Any]:
 async def route_question(state: AgentState) -> dict[str, Any]:
     """Analyzes user inquiry and classifies route to private knowledge base or direct conversation."""
     question = get_latest_question(state)
-    history = get_conversation_history(state)
+    history = get_truncated_conversation_history(state)
 
     try:
         prompt = ROUTER_PROMPT_TEMPLATE.format(history=history, question=question)
@@ -345,11 +346,13 @@ async def plan_tools(state: AgentState) -> dict[str, Any]:
     else:
         # LLM structured output for fuzzy planning
         try:
+            history = get_truncated_conversation_history(state)
             prompt = (
                 "You are an operational tool planner for customer support.\n"
                 "Available tools:\n"
                 "1. get_order_status(order_id): Look up status, carrier, and tracking for an order ID (e.g. ORD-1001).\n"
                 "2. create_support_ticket(summary, order_id): Create a support ticket for customer issues.\n\n"
+                f"Recent Conversation:\n{history}\n\n"
                 f"Customer Query: {question}\n\n"
                 "Determine if any tools are needed. Max 2 calls. Return JSON matching the ToolPlan schema."
             )
@@ -653,7 +656,7 @@ async def condense_query(state: AgentState) -> dict[str, Any]:
         logger.info("[Condense Query] First turn detected; skipping query condensation.")
         return {"current_query": question}
 
-    history = get_conversation_history(state)
+    history = get_truncated_conversation_history(state)
     try:
         prompt = CONDENSE_QUERY_PROMPT_TEMPLATE.format(history=history, question=question)
         response = await get_llm().ainvoke(prompt)

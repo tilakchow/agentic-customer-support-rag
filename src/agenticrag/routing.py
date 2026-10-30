@@ -47,6 +47,36 @@ def get_conversation_history(state: AgentState, limit: int | None = None) -> str
     return "\n".join(history) if history else "No previous conversation."
 
 
+def get_truncated_conversation_history(
+    state: AgentState,
+    limit: int | None = None,
+    assistant_char_limit: int | None = None,
+) -> str:
+    """Extracts recent conversation turns prior to active query, truncating assistant messages for classifier efficiency."""
+    settings = get_settings()
+    if limit is None:
+        limit = settings.classifier_history_messages
+    if assistant_char_limit is None:
+        assistant_char_limit = settings.classifier_assistant_char_limit
+
+    messages = state.get("messages", [])
+    if len(messages) <= 1:
+        return "No previous conversation."
+
+    prior_messages = messages[:-1]
+    history = []
+    for msg in prior_messages[-limit:]:
+        role = "User" if isinstance(msg, HumanMessage) else "Assistant"
+        content = msg.content if hasattr(msg, "content") else str(msg)
+        content_snippet = str(content).strip()
+        if role == "Assistant" and len(content_snippet) > assistant_char_limit:
+            content_snippet = content_snippet[:assistant_char_limit].rstrip() + "..."
+        if content_snippet:
+            history.append(f"{role}: {content_snippet}")
+
+    return "\n".join(history) if history else "No previous conversation."
+
+
 # Compiled word-boundary regexes for routing heuristics
 _INTERNAL_CONTACT_REGEX = re.compile(
     r"\b(?:"

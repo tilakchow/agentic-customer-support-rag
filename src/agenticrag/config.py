@@ -88,6 +88,13 @@ class Settings(BaseSettings):
     max_tokens_generation: int | None = Field(
         default=None, validation_alias="MAX_TOKENS_GENERATION"
     )
+    # History settings for classifiers
+    classifier_history_messages: int = Field(
+        default=4, validation_alias="CLASSIFIER_HISTORY_MESSAGES"
+    )
+    classifier_assistant_char_limit: int = Field(
+        default=200, validation_alias="CLASSIFIER_ASSISTANT_CHAR_LIMIT"
+    )
     kb_version: str = Field(default="v2.1.0", validation_alias="KB_VERSION")
     jwt_secret: str = Field(default="", validation_alias="JWT_SECRET")
     jwt_issuer: str | None = Field(default=None, validation_alias="JWT_ISSUER")

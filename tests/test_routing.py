@@ -241,3 +241,36 @@ def test_policy_sensitive_intent_phrases():
 
     # Standalone 'court' in innocent context must NOT trigger
     assert is_policy_sensitive_request("Deliver to 123 Court Street") is False
+
+
+def test_get_truncated_conversation_history():
+    """get_truncated_conversation_history truncates assistant messages to character limit and respects limit N."""
+    from langchain_core.messages import AIMessage, HumanMessage
+
+    from agenticrag.routing import get_truncated_conversation_history
+
+    long_assistant_msg = "A" * 350
+    state = {
+        "messages": [
+            HumanMessage(content="First turn"),
+            AIMessage(content=long_assistant_msg),
+            HumanMessage(content="Second turn"),
+            AIMessage(content="Short assistant reply"),
+            HumanMessage(content="Active turn"),
+        ]
+    }
+
+    # Default settings (limit=4, cut_length=200)
+    history = get_truncated_conversation_history(state, limit=4, assistant_char_limit=200)
+    assert "First turn" in history
+    assert "Second turn" in history
+    assert "Short assistant reply" in history
+    # Verify truncation
+    assert "A" * 200 + "..." in history
+    assert "A" * 205 not in history
+
+    # Custom limit N=2
+    history_short = get_truncated_conversation_history(state, limit=2, assistant_char_limit=200)
+    assert "First turn" not in history_short
+    assert "Second turn" in history_short
+    assert "Short assistant reply" in history_short
