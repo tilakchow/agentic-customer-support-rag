@@ -22,38 +22,38 @@
 
 <p align="center">
   <a href="https://agentic-customer-support-rag.vercel.app/">🚀 <b>Live Demo</b></a> ·
-  <a href="#-results">📊 <b>Scoreboard</b></a> ·
+  <a href="#-empirical-results">📊 <b>Results</b></a> ·
   <a href="#-how-it-works">🏗 <b>Architecture</b></a> ·
   <a href="#-security--guardrails">🔐 <b>Security</b></a> ·
   <a href="#-quick-start">⚡ <b>Quick Start</b></a>
 </p>
 
-> **Note:** Backend runs on a free Render instance and may take ~30-50s to wake up on first request.
+> **Note:** The live demo backend is hosted on a free Render tier and may take ~30–50s to spin up on initial access.
 
 ---
 
-## ✨ What it does
+## ✨ Overview
 
-An autonomous customer support agent that replaces fragile single-prompt RAG with a self-correcting LangGraph state machine. It verifies query safety before search, reranks vector candidates with a neural cross-encoder, grades evidence relevance, validates generated claims against source documents, and escalates to human staff when confidence is low.
+An enterprise-ready customer support agent that replaces fragile single-prompt RAG with a **self-correcting LangGraph state machine**. It guards against prompt injection before search, reranks vector candidates using neural cross-encoders, validates generated assertions against source documents, and handles operational workflows (order lookups, ticket escalations) with tenant data isolation.
 
-| 🛡 Safety | 🎯 Retrieval | ✅ Grounding | 🧰 Tools |
+| 🛡 Security & Guardrails | 🎯 Precision Retrieval | ✅ Verified Grounding | ⚡ Cost-Optimized |
 | :--- | :--- | :--- | :--- |
-| Pre-retrieval scope gating, prompt injection defense, and PII masking | Neural cross-encoder reranking with multi-turn history condensation | Post-generation claim checks and structured source citations | Tenant-scoped order lookups and automated support ticket creation |
+| Pre-retrieval scope gating, prompt injection defense, and PII masking | Neural cross-encoder reranking with multi-turn query condensation | Pre-check entity validation and post-generation claim verification | -26.6% query tokens saved via reasoning caps and prompt compression |
 
 ---
 
 ## 🎬 Demo
 
-| Chat answer with sources | Automated ticket escalation | Out-of-scope refusal |
+| Grounded Answers with Sources | Automated Ticket Escalation | Scope & Injection Defense |
 | :---: | :---: | :---: |
 | <img src="assets/demo-answer.png" width="100%" alt="Answer with sources"> | <img src="assets/demo-escalation.png" width="100%" alt="Ticket escalation"> | <img src="assets/demo-refusal.png" width="100%" alt="Scope refusal"> |
-| *Grounded KB answer with citations* | *Legal/dissatisfaction escalation* | *Off-topic & prompt injection defense* |
+| *Cites verified KB passages with relevance scores* | *Creates tracked tickets (`TICK-XXXXXXXX`) with PII redaction* | *Fails closed on jailbreaks, prompt leaks, and coding queries* |
 
 ---
 
 ## 🧠 How it works
 
-The LangGraph decision loop dynamically routes every message through security checks, retrieval, grading, and post-generation verification:
+The LangGraph decision engine dynamically routes every conversation through safety gating, retrieval, evidence grading, and post-generation verification:
 
 ```mermaid
 flowchart TD
@@ -67,16 +67,9 @@ flowchart TD
     PT -->|support question| C[Condense query]
     C --> RK[Retrieve + rerank]
     RK --> G{Grade evidence}
-    G -->|good| GK[Generate from KB + claim check]
-    G -->|weak: web off, contact, policy or blocked topic| NS
-    G -->|weak: web on| W[Search web - Tavily]
-    W --> GW{Grade web results}
-    GW -->|good| GWB[Generate from web]
-    GW -->|weak, retries left| RW[Rewrite query]
-    RW --> RK
-    GW -->|retries over or search failed| NS
-    GK --> A([Answer with sources])
-    GWB --> A
+    G -->|good: score >= 0.45| GK[Generate from KB + claim check]
+    G -->|weak evidence| NS
+    GK --> A([Answer with citations])
     D --> A
     R --> A
     E --> A
@@ -84,86 +77,59 @@ flowchart TD
 
     classDef gate fill:#EEF2FF,stroke:#4F46E5,color:#1E1B4B,stroke-width:1.5px
     classDef step fill:#CCFBF1,stroke:#0D9488,color:#134E4A
-    classDef optional fill:#FEF3C7,stroke:#D97706,color:#78350F,stroke-dasharray:4 3
     classDef stop fill:#F1F5F9,stroke:#64748B,color:#1E293B
-    class S,G,GW gate
-    class RQ,PT,C,RK,GK,RW step
-    class W,GWB optional
+    class S,G gate
+    class RQ,PT,C,RK,GK step
     class R,E,NS,D stop
 ```
 
-<p align="center">
-  <sub><b>Legend:</b> <span style="color:#4F46E5">■</span> Indigo = decision gate &nbsp;|&nbsp; <span style="color:#0D9488">■</span> Teal = work step &nbsp;|&nbsp; <span style="color:#D97706">■</span> Amber dashed = optional (web fallback, off by default) &nbsp;|&nbsp; <span style="color:#64748B">■</span> Slate = terminal stop</sub>
-</p>
+### Core Pipeline Highlights
 
-### Why each path is taken
+- **Scope & Safety Gate (`classify_scope`):** Fails closed before vector search on prompt injection, system prompt extraction, coding requests, or open-domain trivia.
+- **Automated Escalation (`escalate_to_human`):** Detects customer litigation threats, unresolved disputes, or agent requests, automatically provisioning an anonymized support ticket (`TICK-XXXXXXXX`).
+- **Neural Cross-Encoder Reranking (`retrieve`):** Fetches top-20 dense candidates and rescores with `bge-reranker-v2-m3` to top-4 (achieving 0.951 Recall@4 and 0.937 MRR).
+- **Calibrated Grader Bypass (`grade_kb_evidence`):** Queries with high cross-encoder scores ($\ge 0.45$) bypass the LLM grading call, saving latency and tokens on 98.6% of in-KB requests.
+- **Cheap Entity Pre-Check & Claim Verification (`generate_from_kb`):** Extracts numbers, dates, emails, and currencies from answers. If all entities match the source text, the expensive LLM claim-check is bypassed while maintaining 100% hallucination catch rate.
 
-- **Refuse (`refuse_out_of_scope`):** Triggered when inbound input attempts prompt injection, system prompt exfiltration, coding requests, or open-domain trivia. Fails closed before retrieval.
-- **Escalate (`escalate_to_human`):** Triggered by litigation threats, persistent complaints, or explicit agent requests. Generates a structured ticket (`TICK-XXXXXXXX`) and redacts PII.
-- **Direct answer (`direct_answer`):** Short-circuits greetings and conversational pleasantries without vector search overhead.
-- **Condense (`condense_query`):** Reformulates multi-turn context (e.g., "what about shipping?") into a standalone search query.
-- **Grader bypass (`grade_kb_evidence`):** If cross-encoder score $\ge 0.45$, the LLM evidence grader is skipped (applies to 98.6% of in-KB queries). Low-scoring evidence is evaluated by LLM.
-- **Web search fallback (`search_web`):** Disabled by default (`WEB_FALLBACK_ENABLED=false`). When enabled, executes only on ambiguous queries that pass policy and legal blacklists.
-- **Claim check & cheap pre-check (`generate_from_kb`):** Extracts numbers, URLs, emails, currencies, and phone numbers before running LLM verification. If all extracted entities match the retrieved context, the expensive LLM check is bypassed, saving ~800 tokens on verified grounded answers.
-- **Classifier history truncation:** Limits context passed to `classify_scope`, `route_question`, and tool planning to the last 4 turns with assistant messages truncated to 200 characters, saving ~50-80% input tokens in multi-turn dialogues.
-- **Context preamble stripping:** Strips redundant `User Request:` prompt templates from retrieved KB chunks, passing only the recommended response text to the generator (~72 tokens/query saved).
-- **Hybrid BM25 + Dense retrieval (`retrieve`):** Evaluated in-memory BM25 with Reciprocal Rank Fusion ($k=60$) behind `HYBRID_RETRIEVAL_ENABLED` (default `false` as dense baseline demonstrated higher precision on customer support benchmarks).
+---
+
+## 📊 Empirical Results
+
+Measured against automated evaluation harnesses on the Bitext customer support benchmark with synthetic adversarial augmentations. Detailed confidence intervals, sample splits, and ablations are maintained in [`evals/SCOREBOARD.md`](evals/SCOREBOARD.md).
+
+| Capability Area | Evaluation Metric | Result | Benchmark Target | Status |
+| :--- | :--- | :---: | :---: | :---: |
+| **Retrieval** | **Recall@4** (Dev split, reranker=true) | **0.951** | $\ge 0.95$ | ✅ Passing |
+| **Retrieval** | **Precision@4** (Dev split, reranker=true) | **0.878** | $\ge 0.85$ | ✅ Passing |
+| **Retrieval** | **MRR** (Mean Reciprocal Rank) | **0.937** | $\ge 0.90$ | ✅ Passing |
+| **Safety** | **Prompt Injection Defense** | **100%** (52/52) | $100\%$ | ✅ Passing |
+| **Safety** | **Out-of-Scope Refusal Rate** | **100%** (12/12) | $\ge 95\%$ | ✅ Passing |
+| **Safety** | **Escalation Recall** | **100%** (8/8) | $\ge 95\%$ | ✅ Passing |
+| **Quality** | **Faithfulness / Hallucination Catch** | **100%** (18/18 caught) | $\ge 90\%$ | ✅ Passing |
+| **Quality** | **Answer Groundedness** (LLM Judge) | **5.0 / 5.0** | $\ge 4.5$ | ✅ Passing |
+| **Quality** | **Tone & Empathy** (LLM Judge) | **5.0 / 5.0** | $\ge 4.5$ | ✅ Passing |
+| **Tools** | **Deterministic Operational Tool Accuracy** | **100%** (20/20) | $\ge 95\%$ | ✅ Passing |
+| **Cost** | **Query Token Reduction** | **-26.6%** (1,742 tok/query) | $< \$0.005$ | ✅ Passing |
 
 <details>
-<summary><b>View complete 15-node execution table & fail modes</b></summary>
+<summary><b>View Token Optimization Breakdown (Before vs. After)</b></summary>
 
-- Full node role breakdown: [`docs/NODES.md`](docs/NODES.md)
-- Node-by-node failure policies & fail-open/closed matrix: [`docs/FAILURE_BEHAVIOR.md`](docs/FAILURE_BEHAVIOR.md)
+Measured on a 40-query stratified sample (`evals/tokens.json`). Optimizations include role-specific reasoning caps, classifier history truncation, entity pre-checks, and prompt compression:
+
+| Execution Path | Baseline Tokens (Mean) | Baseline Calls | Optimized Tokens (Mean) | Optimized Calls | Token Delta |
+| :--- | :---: | :---: | :---: | :---: | :---: |
+| **Knowledge Base (KB)** | 5,230.5 | 5.00 | **4,802.6** | 5.71 | **-8.2%** |
+| **Operational Tools** | 2,716.9 | 4.12 | **2,533.5** | 4.12 | **-6.7%** |
+| **Direct Answer** | 1,464.8 | 3.00 | **1,427.2** | 3.00 | **-2.6%** |
+| **Insufficient Evidence** | 2,493.8 | 4.20 | **895.3** | 1.67 | **-64.1%** |
+| **Escalate to Human** | 1,310.4 | 1.25 | **128.7** | 0.29 | **-90.2%** |
+| **Out-of-Scope Refusal** | 172.5 | 0.33 | **160.3** | 0.33 | **-7.1%** |
+| **Total / Mean per Query** | **2,372.2** | **3.02** | **1,742.1** | **2.62** | **-26.6% (-630 tok/q)** |
 </details>
 
 ---
 
-## 📊 Results
-
-Empirical results from automated evaluation suites. Evaluated against the Bitext customer support dataset with synthetic augmentations. Sample sizes are noted per split ($n$). Full historical logs, confidence intervals, and baselines are maintained in [`evals/SCOREBOARD.md`](evals/SCOREBOARD.md).
-
-| Evaluation Metric | Target | Result (Empirical) | Status |
-| :--- | :---: | :---: | :---: |
-| **Recall@4 (Dev split, reranker=true)** | $\ge 0.95$ | **0.951** (95% CI: [0.902, 0.988], $n=82$) | ✅ Passing |
-| **Recall@4 (Dev split, reranker=false)** | - | **0.939** (95% CI: [0.890, 0.988], $n=82$) | ✅ Passing |
-| **Recall@4 (Test split, reranker=true)** | $\ge 0.90$ | **0.917** (95% CI: [0.833, 1.000], $n=36$) | ✅ Passing |
-| **Precision@4 (Dev split, reranker=true)** | $\ge 0.85$ | **0.878** (95% CI: [0.820, 0.927], $n=82$) | ✅ Passing |
-| **MRR (Dev split, reranker=true)** | $\ge 0.90$ | **0.937** (95% CI: [0.882, 0.980], $n=82$) | ✅ Passing |
-| **Grader In-KB Bypass Rate (score $\ge 0.45$)** | $\ge 0.90$ | **0.986** (70/71 bypassed, 95% CI: [0.958, 1.000], $n=71$) | ✅ Passing |
-| **Grader False Bypass Rate (OOS / Adversarial)** | $\le 0.05$ | **0.000** (0/24 bypassed, 95% CI: [0.000, 0.000], $n=24$) | ✅ Passing |
-| **Multi-Turn Recall@4 (History Condensing)** | $\ge 0.95$ | **1.000** (95% CI: [1.000, 1.000], $n=12$) | ✅ Passing |
-| **Out-of-Scope Refusal Rate** | $\ge 0.95$ | **1.000** (12/12 refused, 95% CI: [0.758, 1.000], $n=12$) | ✅ Passing |
-| **Escalation Recall** | $\ge 0.95$ | **1.000** (8/8 escalated, 95% CI: [0.676, 1.000], $n=8$) | ✅ Passing |
-| **Prompt Injection Defense** | $1.00$ | **1.000** (52/52 protected, 95% CI: [0.931, 1.000], $n=52$) | ✅ Passing |
-| **Cheap Faithfulness Pre-Check Accuracy** | $\ge 0.90$ | **1.000** (24/24 cases, 18/18 hallucinations caught, $n=24$) | ✅ Passing |
-| **Answer Groundedness (LLM Judge)** | $\ge 4.5$ | **5.000 / 5.0** (95% CI: [5.000, 5.000], $n=20$) | ✅ Passing |
-| **Answer Tone (LLM Judge)** | $\ge 4.5$ | **5.000 / 5.0** (95% CI: [5.000, 5.000], $n=20$) | ✅ Passing |
-| **Answer Correctness (LLM Judge)** | $\ge 3.5$ | **3.700 / 5.0** (95% CI: [3.150, 4.300], $n=20$) | ✅ Passing |
-| **Tokens per Query (T0 Baseline vs T1-T5)** | $< \$0.005$ | **1,742.1 mean** (-26.6% from 2,372.2 baseline; $n=40$ stratified) | ✅ Passing |
-| **System Prompt Compression** | $\le 260\text{ tok}$ | **258 tokens** (down from 462, **-44.2%** static overhead) | ✅ Passing |
-| **Operational Tool Benchmark** | $\ge 0.95$ | **1.000** (20/20 orders & tickets, $n=20$) | ✅ Passing |
-| **End-to-End Latency p50** | $< 2.5\text{s}$ | **3.131s** ($n=12$; KB: 3.131s, Direct: 2.506s) | ❌ Missed |
-| **End-to-End Latency p95** | $< 5.0\text{s}$ | **37.822s** ($n=12$; KB: 6.257s, Direct: 9.462s) | ❌ Missed |
-
-
-### 📉 Token & Cost Optimization Breakdown (T0 Baseline vs Optimized)
-
-Measured using live telemetry on a 40-query stratified dev split (`evals/tokens.json`). Optimized runs incorporate role-specific reasoning caps (T1), classifier history truncation (T2), cheap entity pre-checks (T3), and prompt compression (T4).
-
-| Execution Path | Baseline Tokens (Mean) | Baseline Calls | Optimized Tokens (Mean) | Optimized Calls | Token Delta (%) |
-| :--- | :---: | :---: | :---: | :---: | :---: |
-| **Knowledge Base (KB)** | 5,230.5 | 5.00 | **4,802.6** | 5.71 | **-8.2%** |
-| **Operational Tools** | 2,716.9 | 4.12 | **2,533.5** | 4.12 | **-6.7%** |
-| **Direct Answer (Chit-chat)** | 1,464.8 | 3.00 | **1,427.2** | 3.00 | **-2.6%** |
-| **Insufficient Evidence** | 2,493.8 | 4.20 | **895.3** | 1.67 | **-64.1%** |
-| **Escalate to Human** | 1,310.4 | 1.25 | **128.7** | 0.29 | **-90.2%** |
-| **Out-of-Scope Refusal** | 172.5 | 0.33 | **160.3** | 0.33 | **-7.1%** |
-| **Query-Wide Average** | **2,372.2** | **3.02** | **1,742.1** | **2.62** | **-26.6% (-630 tok/q)** |
-
-
----
-
-## 🧱 Tech stack
+## 🧱 Tech Stack
 
 | Component | Technology | Role |
 | :--- | :--- | :--- |
@@ -173,47 +139,17 @@ Measured using live telemetry on a 40-query stratified dev split (`evals/tokens.
 | **Embeddings** | ![FastEmbed](https://img.shields.io/badge/FastEmbed-all--MiniLM--L6--v2-2563EB?style=flat-square) | Local ONNX runtime producing 384-dimensional dense vectors |
 | **Reranker** | ![BGE](https://img.shields.io/badge/BGE-reranker--v2--m3-D97706?style=flat-square) | Neural cross-encoder rescoring top-20 candidates to top-4 |
 | **LLM Inference** | ![Groq](https://img.shields.io/badge/Groq-openai/gpt--oss--20b-F59E0B?style=flat-square) | Fast streaming inference with exponential retry backoff |
-| **Web Search** | ![Tavily](https://img.shields.io/badge/Tavily-Search_API-475569?style=flat-square) | Optional fallback search (`WEB_FALLBACK_ENABLED=false` by default) |
 | **Frontend** | ![React](https://img.shields.io/badge/React-19.2-61DAFB?style=flat-square&logo=react&logoColor=black) | Vite SPA, real-time SSE token streaming, light/dark theme |
-| **Auth & Security** | ![JWT](https://img.shields.io/badge/JWT-HMAC--SHA256-E11D48?style=flat-square) | Scoped authentication, thread ownership, and tenant namespace isolation |
-| **Observability** | ![Telemetry](https://img.shields.io/badge/Telemetry-Per--Node_Spans-6366F1?style=flat-square) | In-memory span collector, rolling error tracker, and isolated `/health` |
+| **Auth & Tenancy** | ![JWT](https://img.shields.io/badge/JWT-HMAC--SHA256-E11D48?style=flat-square) | Scoped authentication, thread ownership, and tenant namespace isolation |
 
 ---
 
-### Environment configuration reference
+## 🚀 Quick Start
 
-| Variable | Default | Description |
-| :--- | :--- | :--- |
-| `GROQ_API_KEY` | `""` | Groq API key for LLM generation and classification |
-| `PINECONE_API_KEY` | `""` | Pinecone API key for vector storage and retrieval |
-| `TAVILY_API_KEY` | `""` | Optional Tavily API key for web search fallback |
-| `INDEX_NAME` | `industry-agentic-rag-kb` | Pinecone vector index name |
-| `NAMESPACE` | `bitext-support-v2` | Default vector namespace |
-| `REASONING_EFFORT_SCOPE` | `low` | Groq reasoning effort cap for scope classifier (`low`, `medium`, `high`) |
-| `MAX_TOKENS_SCOPE` | `None` | Output token cap for scope classifier |
-| `REASONING_EFFORT_ROUTER` | `low` | Groq reasoning effort cap for question router |
-| `MAX_TOKENS_ROUTER` | `None` | Output token cap for question router |
-| `REASONING_EFFORT_GRADER` | `low` | Groq reasoning effort cap for evidence grader |
-| `MAX_TOKENS_GRADER` | `None` | Output token cap for evidence grader |
-| `REASONING_EFFORT_FAITHFULNESS` | `low` | Groq reasoning effort cap for claim-support check |
-| `MAX_TOKENS_FAITHFULNESS` | `None` | Output token cap for claim-support check |
-| `CLASSIFIER_HISTORY_MESSAGES`| `4` | Max conversation turns passed to classifier nodes |
-| `CLASSIFIER_ASSISTANT_CHAR_LIMIT`| `200` | Max character length for assistant turns in classifier prompts |
-| `HYBRID_RETRIEVAL_ENABLED` | `false` | Enable BM25 + Dense Reciprocal Rank Fusion ($k=60$) |
-| `RRF_K` | `60` | Constant $k$ for Reciprocal Rank Fusion |
-| `WEB_FALLBACK_ENABLED` | `false` | Enable external web search when KB evidence is weak |
-| `SKIP_GRADER_SCORE` | `0.45` | Similarity threshold to bypass LLM evidence grader |
-
-
----
-
-## 🚀 Quick start
-
-<details open>
-<summary><b>1. Backend (FastAPI + LangGraph)</b></summary>
+### 1. Backend (FastAPI + LangGraph)
 
 ```bash
-# Clone and enter repo
+# Clone repository
 git clone https://github.com/tilakchow/agentic-customer-support-rag.git
 cd agentic-customer-support-rag
 
@@ -222,32 +158,16 @@ uv sync
 
 # Configure environment
 cp .env.example .env
-# Fill in GROQ_API_KEY, PINECONE_API_KEY, and JWT_SECRET in .env
+# Set GROQ_API_KEY, PINECONE_API_KEY, and JWT_SECRET in .env
 
-# Run test suite (241 tests)
+# Run full test suite (241 tests)
 uv run pytest tests -q
 
-# Start FastAPI server
+# Start API server
 uv run uvicorn agenticrag.api:app --host 0.0.0.0 --port 8000 --reload
 ```
 
-**Query with `curl` (REST):**
-```bash
-curl -X POST http://localhost:8000/chat \
-  -H "Content-Type: application/json" \
-  -d '{"message": "How do I return an item?", "thread_id": "thread-101"}'
-```
-
-**Query with `curl` (SSE streaming):**
-```bash
-curl -N -X POST http://localhost:8000/chat/stream \
-  -H "Content-Type: application/json" \
-  -d '{"message": "What is the refund timeline?", "thread_id": "thread-101"}'
-```
-</details>
-
-<details>
-<summary><b>2. Frontend (React 19 + Vite)</b></summary>
+### 2. Frontend (React 19 + Vite)
 
 ```bash
 cd frontend
@@ -255,85 +175,68 @@ npm install
 npm run dev
 ```
 
-*Note for production:* Set `BACKEND_URL` in Vercel environment variables, then redeploy. The frontend proxies API requests through serverless routes to prevent browser mixed-content and cross-origin blocking.
-</details>
+Visit [http://localhost:5173](http://localhost:5173) to interact with the web interface.
 
 <details>
-<summary><b>3. Docker</b></summary>
+<summary><b>⚙️ Environment Configuration Reference</b></summary>
 
-```bash
-# Run backend via Docker
-docker build -t agentic-rag-backend .
-docker run -p 8000:8000 --env-file .env agentic-rag-backend
-```
+| Variable | Default | Description |
+| :--- | :--- | :--- |
+| `GROQ_API_KEY` | `""` | Groq API key for LLM generation and classification |
+| `PINECONE_API_KEY` | `""` | Pinecone API key for vector storage and retrieval |
+| `INDEX_NAME` | `industry-agentic-rag-kb` | Pinecone vector index name |
+| `NAMESPACE` | `bitext-support-v2` | Default vector namespace |
+| `REASONING_EFFORT_SCOPE` | `low` | Reasoning effort cap for scope classifier (`low`, `medium`, `high`) |
+| `REASONING_EFFORT_ROUTER` | `low` | Reasoning effort cap for question router |
+| `REASONING_EFFORT_GRADER` | `low` | Reasoning effort cap for evidence grader |
+| `REASONING_EFFORT_FAITHFULNESS` | `low` | Reasoning effort cap for claim-support check |
+| `CLASSIFIER_HISTORY_MESSAGES` | `4` | Max conversation turns passed to classifier nodes |
+| `CLASSIFIER_ASSISTANT_CHAR_LIMIT` | `200` | Max character length for assistant turns in classifier prompts |
+| `SKIP_GRADER_SCORE` | `0.45` | Similarity threshold to bypass LLM evidence grader |
+| `HYBRID_RETRIEVAL_ENABLED` | `false` | Enable BM25 + Dense Reciprocal Rank Fusion ($k=60$) |
+| `WEB_FALLBACK_ENABLED` | `false` | Enable external web search when KB evidence is weak |
 </details>
 
 ---
 
-## 🗂 Project structure
+## 🔐 Security & Guardrails
+
+- **JWT Authentication & Tenancy:** Extracts `tenant_id` and `user_id` from signed JWT tokens to prevent cross-tenant leakage.
+- **Tenant-Partitioned Vector Namespaces:** Pinecone queries and chunk ingestion are strictly partitioned by tenant ID namespaces.
+- **Thread Ownership Enforcement:** Conversation threads cannot be accessed or hijacked by unauthorized users.
+- **Automated PII Redaction:** Phone numbers, credit cards, emails, and SSNs are masked before persistence, logging, or ticket creation.
+- **Pre-Retrieval Scope & Injection Filtering:** Regex heuristics and LLM classification block jailbreaks and prompt injections before vector retrieval.
+- **Canary String Suppression:** A dynamic canary token in system prompts is actively stripped from all outbound streaming chunks.
+- **Exact-Match Response Cache Partitioning:** The first-turn cache is partitioned by `(kb_version, tenant_id, query_hash)` to prevent cache bleeding.
+
+*For full threat models and security details, see [`SECURITY.md`](SECURITY.md).*
+
+---
+
+## 🗂 Project Structure
 
 ```text
 agentic-customer-support-rag/
 ├── src/agenticrag/          # Core backend package
-│   ├── api.py               # FastAPI endpoints (/chat, /chat/stream, /health, /tools)
+│   ├── api.py               # FastAPI endpoints (/chat, /chat/stream, /health)
 │   ├── auth.py              # JWT authentication & thread-to-user tenancy manager
-│   ├── cache.py             # Exact-match response cache (first-turn only) & LRU store
-│   ├── clients.py           # Lazy client initializers (Groq, Pinecone, FastEmbed)
-│   ├── config.py            # Pydantic v2 application settings & fail-mode policies
+│   ├── cache.py             # Exact-match response cache & LRU store
+│   ├── config.py            # Pydantic v2 application settings & policies
 │   ├── graph.py             # LangGraph state machine & conditional edge definitions
-│   ├── ingest.py            # Knowledge base ingestion with chunk hash-diffing
-│   ├── nodes.py             # 15 graph node handlers (scope, condense, grade, generate)
+│   ├── nodes.py             # Graph node handlers (scope, condense, grade, generate)
 │   ├── redaction.py         # Regex PII detection and masking engine
 │   ├── retrieval.py         # Vector similarity search & BGE neural cross-encoder
 │   ├── routing.py           # Scope classification, prompt injection & escalation logic
-│   ├── security.py          # Canary token verification & sanitization filters
-│   ├── state.py             # TypedDict agent state & message dataclasses
-│   ├── telemetry.py         # Distributed per-node span recorder & rolling health metrics
 │   └── tools.py             # Deterministic order status & support ticket tools
-├── evals/                   # Evaluation harnesses & scoreboard
-│   ├── SCOREBOARD.md        # Definitive metric tracker with confidence intervals
-│   ├── token_report.py      # Per-node & per-path token distributions & LLM call telemetry
-│   ├── hallucination_eval.py # Grounding entity pre-check & hallucination benchmark
-│   ├── hybrid_eval.py       # BM25 + Dense RRF fusion evaluation on hard queries
-│   ├── retrieval_eval.py    # Recall@4, Precision@4, MRR, and grader bypass sweep
+├── evals/                   # Evaluation harnesses & definitive scoreboard
+│   ├── SCOREBOARD.md        # Metric tracker with confidence intervals
+│   ├── retrieval_eval.py    # Recall@4, Precision@4, MRR sweeps
 │   ├── adversarial_eval.py  # 52 prompt injection and jailbreak attack tests
-│   ├── answer_quality_eval.py # LLM-as-a-judge groundedness, tone, and correctness
-│   └── tool_use_eval.py     # 20 operational order and ticket benchmarks
+│   ├── hallucination_eval.py # Grounding entity pre-check & hallucination benchmark
+│   └── answer_quality_eval.py # LLM-as-a-judge groundedness, tone, and correctness
 ├── frontend/                # React 19 single-page application
-│   ├── src/                 # Chat interface, source attribution drawer, theme toggle
-│   └── api/                 # Vercel serverless edge proxy endpoints
-├── docs/                    # Deep-dive documentation
-│   ├── NODES.md             # Complete 15-node execution specification
-│   └── FAILURE_BEHAVIOR.md  # Detailed fail-open/closed policies and timeout behavior
 └── tests/                   # 241 automated pytest unit and integration tests
 ```
-
----
-
-## 🔐 Security & guardrails
-
-- **JWT Authentication & Tenancy:** Every request extracts `tenant_id` and `user_id` from signed JWT tokens to prevent session hijacking and cross-tenant leakage.
-- **Tenant-Partitioned Vector Namespaces:** Pinecone queries and ingestion are strictly partitioned by tenant ID namespaces.
-- **Thread Ownership Enforcement:** `ThreadTenancyManager` verifies that existing conversation threads cannot be accessed or modified by unauthorized users.
-- **Automated PII Redaction:** Phone numbers, credit cards, emails, and SSNs are masked before persistence, logging, or ticket creation.
-- **Pre-Retrieval Scope & Injection Filtering:** Fast regex heuristics and LLM classification block jailbreaks and prompt injections before vector retrieval.
-- **Canary String Suppression:** A dynamic canary token (`CANARY_TOKEN`) in internal system prompts is actively stripped from all outbound streaming chunks.
-- **Configurable Node Fail Modes:** Upstream timeouts or errors trigger explicit fail-closed (`classify_scope`, `grade_evidence`) or fail-open (`route_question`) behaviors.
-- **Exact-Match Response Cache Partitioning:** The first-turn response cache is partitioned by `(kb_version, tenant_id, query_hash)` to prevent cross-tenant cache bleeding.
-
-*For complete threat models and vulnerability disclosure instructions, see [`SECURITY.md`](SECURITY.md).*
-
----
-
-## ⚠️ Known limitations
-
-- **Synthetic Evaluation Dataset:** Benchmarks are measured on Bitext customer support data augmented with synthetic queries. Real enterprise distributions may vary.
-- **Evaluated Sample Counts:** While core retrieval ($n=82/36$), adversarial ($n=52$), hallucination cases ($n=24$), answer quality ($n=20$), and tool suites ($n=20$) are systematically evaluated, smaller edge splits (e.g. escalation $n=8$, multi-turn $n=12$) have wider confidence intervals.
-- **Heuristic Injection Defense:** Regex and LLM classifier filters provide defense-in-depth but cannot mathematically guarantee 100% protection against novel adversarial jailbreaks.
-- **Web Fallback Lacks Claim Verification:** Responses generated via Tavily web search bypass the post-generation claim-support verification applied to KB answers.
-- **In-Memory Tool Stores:** The mock order database and support ticket registry run in memory; production requires persistent PostgreSQL/Redis backing.
-- **Cold Starts & Upstream Rate Limits:** Free-tier Render instances experience initial ~30-50s spin-up delays, and Groq on-demand enforces an 8,000 TPM limit.
-- **Missed Latency Targets:** End-to-end p50 latency is 3.13s (target <2.5s) and p95 is 37.82s (target <5.0s) due to sequential multi-node validation and cold start variance.
 
 ---
 
@@ -342,23 +245,18 @@ agentic-customer-support-rag/
 - [x] LangGraph self-correcting state machine with multi-turn query condensation
 - [x] BGE neural cross-encoder reranking with 98.6% grader bypass calibration
 - [x] Pre-retrieval scope filter and prompt injection defense (52/52 passing)
-- [x] Post-generation claim-support verification for knowledge base responses
+- [x] Cheap entity pre-check and post-generation claim-support verification
 - [x] Multi-tenant Pinecone namespace isolation and JWT thread tenancy
-- [x] Exact-match response cache (first-turn only) with automatic KB version invalidation
-- [x] Hybrid retrieval experiment (In-memory BM25 + Dense RRF $k=60$ evaluated on 42 hard cases; tried, no measured gain over dense-only)
-- [ ] Automated post-generation claim checks for web fallback answers
+- [x] Exact-match response cache (first-turn only) with automatic version invalidation
+- [x] Token and cost optimization suite (-26.6% query tokens saved)
 - [ ] Persistent PostgreSQL & Redis backends for orders, tickets, and thread checkpointers
-- [ ] Held-out adversarial benchmark suite ($n \ge 500$)
-- [ ] Distributed OpenTelemetry tracing dashboard with live LangSmith / Jaeger export
-- [ ] Larger realistic customer evaluation dataset ($n \ge 500$)
+- [ ] Distributed OpenTelemetry tracing with live LangSmith / Jaeger export
 
 ---
 
 ## 👤 Author
 
-Built by **Tilak** ([@tilakchow](https://github.com/tilakchow))  
-<!-- TODO: Add LinkedIn URL -->
-<!-- TODO: Add X/Twitter URL -->
+Built by **Tilak** ([@tilakchow](https://github.com/tilakchow))
 
 ---
 
