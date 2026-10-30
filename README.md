@@ -15,7 +15,7 @@
   <a href="https://langchain.com/langgraph"><img src="https://img.shields.io/badge/LangGraph-1.2+-4F46E5?style=flat-square&logo=langchain&logoColor=white" alt="LangGraph"></a>
   <a href="https://www.pinecone.io"><img src="https://img.shields.io/badge/Pinecone-Serverless-000000?style=flat-square&logo=pinecone&logoColor=white" alt="Pinecone"></a>
   <a href="https://react.dev"><img src="https://img.shields.io/badge/React-19-61DAFB?style=flat-square&logo=react&logoColor=black" alt="React 19"></a>
-  <a href="tests/"><img src="https://img.shields.io/badge/Tests-235%20Passing-10B981?style=flat-square&logo=pytest&logoColor=white" alt="Tests"></a>
+  <a href="tests/"><img src="https://img.shields.io/badge/Tests-241%20Passing-10B981?style=flat-square&logo=pytest&logoColor=white" alt="Tests"></a>
   <a href="https://github.com/tilakchow/agentic-customer-support-rag/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/tilakchow/agentic-customer-support-rag/ci.yml?branch=main&style=flat-square&logo=githubactions&logoColor=white&label=CI" alt="CI Status"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-334155?style=flat-square" alt="License MIT"></a>
 </p>
@@ -122,6 +122,7 @@ Empirical results from automated evaluation suites. Evaluated against the Bitext
 | Evaluation Metric | Target | Result (Empirical) | Status |
 | :--- | :---: | :---: | :---: |
 | **Recall@4 (Dev split, reranker=true)** | $\ge 0.95$ | **0.951** (95% CI: [0.902, 0.988], $n=82$) | ✅ Passing |
+| **Recall@4 (Dev split, reranker=false)** | - | **0.939** (95% CI: [0.890, 0.988], $n=82$) | ✅ Passing |
 | **Recall@4 (Test split, reranker=true)** | $\ge 0.90$ | **0.917** (95% CI: [0.833, 1.000], $n=36$) | ✅ Passing |
 | **Precision@4 (Dev split, reranker=true)** | $\ge 0.85$ | **0.878** (95% CI: [0.820, 0.927], $n=82$) | ✅ Passing |
 | **MRR (Dev split, reranker=true)** | $\ge 0.90$ | **0.937** (95% CI: [0.882, 0.980], $n=82$) | ✅ Passing |
@@ -131,10 +132,15 @@ Empirical results from automated evaluation suites. Evaluated against the Bitext
 | **Out-of-Scope Refusal Rate** | $\ge 0.95$ | **1.000** (12/12 refused, 95% CI: [0.758, 1.000], $n=12$) | ✅ Passing |
 | **Escalation Recall** | $\ge 0.95$ | **1.000** (8/8 escalated, 95% CI: [0.676, 1.000], $n=8$) | ✅ Passing |
 | **Prompt Injection Defense** | $1.00$ | **1.000** (52/52 protected, 95% CI: [0.931, 1.000], $n=52$) | ✅ Passing |
-| **Faithfulness (Claim-Support Check)** | $\ge 0.85$ | **1.000** (4/4 passed, 95% CI: [0.510, 1.000], $n=4$) | ✅ Passing |
+| **Cheap Faithfulness Pre-Check Accuracy** | $\ge 0.90$ | **1.000** (24/24 cases, 18/18 hallucinations caught, $n=24$) | ✅ Passing |
+| **Answer Groundedness (LLM Judge)** | $\ge 4.5$ | **5.000 / 5.0** (95% CI: [5.000, 5.000], $n=20$) | ✅ Passing |
+| **Answer Tone (LLM Judge)** | $\ge 4.5$ | **5.000 / 5.0** (95% CI: [5.000, 5.000], $n=20$) | ✅ Passing |
+| **Answer Correctness (LLM Judge)** | $\ge 3.5$ | **3.700 / 5.0** (95% CI: [3.150, 4.300], $n=20$) | ✅ Passing |
+| **Tokens per Query (T0 Baseline vs T1-T5)** | $< \$0.005$ | **1,742.1 mean** (-26.6% from 2,372.2 baseline; $n=40$ stratified) | ✅ Passing |
+| **System Prompt Compression** | $\le 260\text{ tok}$ | **258 tokens** (down from 462, **-44.2%** static overhead) | ✅ Passing |
 | **Operational Tool Benchmark** | $\ge 0.95$ | **1.000** (20/20 orders & tickets, $n=20$) | ✅ Passing |
-| **End-to-End Latency p50** | $< 2.5\text{s}$ | **3.131s** ($n=12$; KB: 3.131s, Direct: 2.506s) | ⚠️ Missed |
-| **End-to-End Latency p95** | $< 5.0\text{s}$ | **37.822s** ($n=12$; KB: 6.257s, Direct: 9.462s) | ⚠️ Missed |
+| **End-to-End Latency p50** | $< 2.5\text{s}$ | **3.131s** ($n=12$; KB: 3.131s, Direct: 2.506s) | ❌ Missed |
+| **End-to-End Latency p95** | $< 5.0\text{s}$ | **37.822s** ($n=12$; KB: 6.257s, Direct: 9.462s) | ❌ Missed |
 
 ---
 
@@ -155,6 +161,33 @@ Empirical results from automated evaluation suites. Evaluated against the Bitext
 
 ---
 
+### Environment configuration reference
+
+| Variable | Default | Description |
+| :--- | :--- | :--- |
+| `GROQ_API_KEY` | `""` | Groq API key for LLM generation and classification |
+| `PINECONE_API_KEY` | `""` | Pinecone API key for vector storage and retrieval |
+| `TAVILY_API_KEY` | `""` | Optional Tavily API key for web search fallback |
+| `INDEX_NAME` | `industry-agentic-rag-kb` | Pinecone vector index name |
+| `NAMESPACE` | `bitext-support-v2` | Default vector namespace |
+| `REASONING_EFFORT_SCOPE` | `low` | Groq reasoning effort cap for scope classifier (`low`, `medium`, `high`) |
+| `MAX_TOKENS_SCOPE` | `None` | Output token cap for scope classifier |
+| `REASONING_EFFORT_ROUTER` | `low` | Groq reasoning effort cap for question router |
+| `MAX_TOKENS_ROUTER` | `None` | Output token cap for question router |
+| `REASONING_EFFORT_GRADER` | `low` | Groq reasoning effort cap for evidence grader |
+| `MAX_TOKENS_GRADER` | `None` | Output token cap for evidence grader |
+| `REASONING_EFFORT_FAITHFULNESS` | `low` | Groq reasoning effort cap for claim-support check |
+| `MAX_TOKENS_FAITHFULNESS` | `None` | Output token cap for claim-support check |
+| `CLASSIFIER_HISTORY_MESSAGES`| `4` | Max conversation turns passed to classifier nodes |
+| `CLASSIFIER_ASSISTANT_CHAR_LIMIT`| `200` | Max character length for assistant turns in classifier prompts |
+| `HYBRID_RETRIEVAL_ENABLED` | `false` | Enable BM25 + Dense Reciprocal Rank Fusion ($k=60$) |
+| `RRF_K` | `60` | Constant $k$ for Reciprocal Rank Fusion |
+| `WEB_FALLBACK_ENABLED` | `false` | Enable external web search when KB evidence is weak |
+| `SKIP_GRADER_SCORE` | `0.45` | Similarity threshold to bypass LLM evidence grader |
+
+
+---
+
 ## 🚀 Quick start
 
 <details open>
@@ -172,7 +205,7 @@ uv sync
 cp .env.example .env
 # Fill in GROQ_API_KEY, PINECONE_API_KEY, and JWT_SECRET in .env
 
-# Run test suite (235 tests)
+# Run test suite (241 tests)
 uv run pytest tests -q
 
 # Start FastAPI server
@@ -250,7 +283,7 @@ agentic-customer-support-rag/
 ├── docs/                    # Deep-dive documentation
 │   ├── NODES.md             # Complete 15-node execution specification
 │   └── FAILURE_BEHAVIOR.md  # Detailed fail-open/closed policies and timeout behavior
-└── tests/                   # 235 automated pytest unit and integration tests
+└── tests/                   # 241 automated pytest unit and integration tests
 ```
 
 ---
@@ -290,7 +323,7 @@ agentic-customer-support-rag/
 - [x] Post-generation claim-support verification for knowledge base responses
 - [x] Multi-tenant Pinecone namespace isolation and JWT thread tenancy
 - [x] Exact-match response cache (first-turn only) with automatic KB version invalidation
-- [ ] Hybrid retrieval (BM25 + Dense vector search via Reciprocal Rank Fusion / RRF ablation)
+- [x] Hybrid retrieval experiment (In-memory BM25 + Dense RRF $k=60$ evaluated on 42 hard cases; tried, no measured gain over dense-only)
 - [ ] Automated post-generation claim checks for web fallback answers
 - [ ] Persistent PostgreSQL & Redis backends for orders, tickets, and thread checkpointers
 - [ ] Held-out adversarial benchmark suite ($n \ge 500$)
