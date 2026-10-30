@@ -54,6 +54,86 @@ def _rerank_with_retry(
     )
 
 
+_bm25_index: Any = None
+_bm25_corpus: list[Document] = []
+
+
+def get_bm25_retriever(settings: Settings | None = None) -> tuple[Any, list[Document]]:
+    """Lazily initializes and caches in-memory BM25 index over the Bitext KB documents."""
+    global _bm25_index, _bm25_corpus
+    if _bm25_index is not None and _bm25_corpus:
+        return _bm25_index, _bm25_corpus
+
+    settings = settings or get_settings()
+    try:
+        from datasets import load_dataset
+        from rank_bm25 import BM25Okapi
+
+        from agenticrag.constants import DATASET_NAME
+
+        dataset = load_dataset(DATASET_NAME, split="train")
+        sample_size = min(len(dataset), settings.kb_sample_size)
+        sample_data = dataset.shuffle(seed=settings.kb_seed).select(range(sample_size))
+
+        corpus: list[Document] = []
+        for idx, row in enumerate(sample_data):
+            content = f"User Request: {row['instruction']}\nRecommended Response: {row['response']}"
+            meta = {
+                "source": "bitext_customer_support",
+                "category": row.get("category", "support"),
+                "intent": row.get("intent", "general"),
+                "id": f"chunk-{idx}",
+            }
+            corpus.append(Document(page_content=content, metadata=meta))
+
+        tokenized_corpus = [doc.page_content.lower().split() for doc in corpus]
+        _bm25_index = BM25Okapi(tokenized_corpus)
+        _bm25_corpus = corpus
+    except Exception as e:
+        logger.warning("[BM25 Init Warning]: Failed to build BM25 index (%s). BM25 disabled.", e)
+        _bm25_index = None
+        _bm25_corpus = []
+
+    return _bm25_index, _bm25_corpus
+
+
+def reciprocal_rank_fusion(
+    dense_docs: list[Document],
+    bm25_docs: list[Document],
+    rrf_k: int = 60,
+    top_n: int = 20,
+) -> list[Document]:
+    """Fuses dense vector candidates and BM25 candidates using Reciprocal Rank Fusion."""
+    scores: dict[str, float] = {}
+    doc_map: dict[str, Document] = {}
+
+    def doc_key(doc: Document, fallback_idx: int) -> str:
+        return str(
+            doc.metadata.get("id")
+            or doc.metadata.get("doc_id")
+            or f"doc_{hash(doc.page_content[:80])}_{fallback_idx}"
+        )
+
+    for rank, doc in enumerate(dense_docs, 1):
+        key = doc_key(doc, rank)
+        doc_map[key] = doc
+        scores[key] = scores.get(key, 0.0) + (1.0 / (rrf_k + rank))
+
+    for rank, doc in enumerate(bm25_docs, 1):
+        key = doc_key(doc, rank + 1000)
+        if key not in doc_map:
+            doc_map[key] = doc
+        scores[key] = scores.get(key, 0.0) + (1.0 / (rrf_k + rank))
+
+    sorted_keys = sorted(scores.keys(), key=lambda k: scores[k], reverse=True)[:top_n]
+    fused: list[Document] = []
+    for k_key in sorted_keys:
+        d = doc_map[k_key]
+        d.metadata["rrf_score"] = scores[k_key]
+        fused.append(d)
+    return fused
+
+
 def retrieve_kb(
     query: str,
     *,
@@ -63,6 +143,7 @@ def retrieve_kb(
     settings: Settings | None = None,
     pinecone_client: Any = None,
     reranker_enabled: bool | None = None,
+    hybrid_enabled: bool | None = None,
 ) -> RetrievalResult:
     """Retrieves relevant knowledge base documents with vector search and optional neural reranking.
 
@@ -97,6 +178,28 @@ def retrieve_kb(
     for doc, score in scored_results:
         doc.metadata["score"] = float(score)
         candidate_docs.append(doc)
+
+    use_hybrid = settings.hybrid_retrieval_enabled if hybrid_enabled is None else hybrid_enabled
+    if use_hybrid:
+        try:
+            bm25, corpus = get_bm25_retriever(settings)
+            if bm25 and corpus:
+                tokenized_query = query.lower().split()
+                bm25_scores = bm25.get_scores(tokenized_query)
+                top_indices = sorted(
+                    range(len(bm25_scores)), key=lambda i: bm25_scores[i], reverse=True
+                )[:fetch_k]
+                bm25_candidates = [corpus[idx] for idx in top_indices]
+                candidate_docs = reciprocal_rank_fusion(
+                    dense_docs=candidate_docs,
+                    bm25_docs=bm25_candidates,
+                    rrf_k=settings.rrf_k,
+                    top_n=fetch_k,
+                )
+        except Exception as bm25_err:
+            logger.warning(
+                "[Hybrid Retrieval Warning]: %s. Proceeding with dense candidates.", bm25_err
+            )
 
     docs: list[Document] = []
     top_score = 0.0

@@ -1,0 +1,42 @@
+{"id": "hyb-id-001", "query": "Track order package with tracking number ORD-10923", "expected_intent": "track_order", "type": "exact_id", "split": "dev"}
+{"id": "hyb-id-002", "query": "I need to download invoice INV-88371 for tax filing", "expected_intent": "get_invoice", "type": "exact_id", "split": "dev"}
+{"id": "hyb-id-003", "query": "Where is my shipment with tracking code TRK-99201?", "expected_intent": "track_order", "type": "exact_id", "split": "dev"}
+{"id": "hyb-id-004", "query": "Cancel transaction purchase ID TXN-44912 immediately", "expected_intent": "cancel_order", "type": "exact_id", "split": "dev"}
+{"id": "hyb-id-005", "query": "Check refund status for transaction REF-77123", "expected_intent": "track_refund", "type": "exact_id", "split": "dev"}
+{"id": "hyb-id-006", "query": "Billing question regarding invoice number INV-20045", "expected_intent": "check_invoice", "type": "exact_id", "split": "dev"}
+{"id": "hyb-id-007", "query": "Order ORD-55122 has not arrived yet, what is the status?", "expected_intent": "track_order", "type": "exact_id", "split": "dev"}
+{"id": "hyb-id-008", "query": "Update shipping destination for order reference ORD-66190", "expected_intent": "change_shipping_address", "type": "exact_id", "split": "dev"}
+{"id": "hyb-id-009", "query": "I want a receipt copy for purchase ID REC-33921", "expected_intent": "get_invoice", "type": "exact_id", "split": "dev"}
+{"id": "hyb-id-010", "query": "Can I remove an item from order batch ORD-11029?", "expected_intent": "change_order", "type": "exact_id", "split": "dev"}
+{"id": "hyb-id-011", "query": "Status of my refund claim RFN-88219", "expected_intent": "track_refund", "type": "exact_id", "split": "dev"}
+{"id": "hyb-id-012", "query": "Delivery confirmation code DLV-44120 says delivered but package missing", "expected_intent": "complaint", "type": "exact_id", "split": "dev"}
+{"id": "hyb-id-013", "query": "Account ACC-99021 password reset link failed", "expected_intent": "recover_password", "type": "exact_id", "split": "dev"}
+{"id": "hyb-id-014", "query": "Please close customer profile ID USR-44182 permanently", "expected_intent": "delete_account", "type": "exact_id", "split": "dev"}
+{"id": "hyb-typo-001", "query": "hw do i chnge my shiping adress for my item?", "expected_intent": "change_shipping_address", "type": "typo", "split": "dev"}
+{"id": "hyb-typo-002", "query": "cancell my purchse ordr plese right nw", "expected_intent": "cancel_order", "type": "typo", "split": "dev"}
+{"id": "hyb-typo-003", "query": "wht is the refnd polycy for damagd clothng?", "expected_intent": "check_refund_policy", "type": "typo", "split": "dev"}
+{"id": "hyb-typo-004", "query": "dilevery peroid and shipmnt arival date", "expected_intent": "delivery_period", "type": "typo", "split": "dev"}
+{"id": "hyb-typo-005", "query": "pasword reccovery email not recived in inbx", "expected_intent": "recover_password", "type": "typo", "split": "dev"}
+{"id": "hyb-typo-006", "query": "unsubscirbe newsleter promo emals plese", "expected_intent": "newsletter_subscription", "type": "typo", "split": "dev"}
+{"id": "hyb-typo-007", "query": "how to trak my packge dilvery statuss", "expected_intent": "track_order", "type": "typo", "split": "dev"}
+{"id": "hyb-typo-008", "query": "is ther any cancelation feee or charg?", "expected_intent": "check_cancellation_fee", "type": "typo", "split": "dev"}
+{"id": "hyb-typo-009", "query": "i wnt to submite an ofical complain abt bad servce", "expected_intent": "complaint", "type": "typo", "split": "dev"}
+{"id": "hyb-typo-010", "query": "wher can i dwnload my invoyce and recipte?", "expected_intent": "get_invoice", "type": "typo", "split": "dev"}
+{"id": "hyb-typo-011", "query": "suport custmer servce phne numbr to call", "expected_intent": "contact_customer_service", "type": "typo", "split": "dev"}
+{"id": "hyb-typo-012", "query": "wht paymnt metods and optons r acepted?", "expected_intent": "check_payment_methods", "type": "typo", "split": "dev"}
+{"id": "hyb-typo-013", "query": "delite my acount and privcy infomation", "expected_intent": "delete_account", "type": "typo", "split": "dev"}
+{"id": "hyb-typo-014", "query": "cant sin up, registrtion errror on webste", "expected_intent": "registration_problems", "type": "typo", "split": "dev"}
+{"id": "hyb-near-001", "query": "Has my refund been sent to my credit card yet?", "expected_intent": "track_refund", "type": "near_duplicate", "split": "dev"}
+{"id": "hyb-near-002", "query": "What are the terms and conditions for getting a refund?", "expected_intent": "check_refund_policy", "type": "near_duplicate", "split": "dev"}
+{"id": "hyb-near-003", "query": "I returned my product yesterday, issue my money back now", "expected_intent": "get_refund", "type": "near_duplicate", "split": "dev"}
+{"id": "hyb-near-004", "query": "Will I be penalized or charged money if I terminate my order?", "expected_intent": "check_cancellation_fee", "type": "near_duplicate", "split": "dev"}
+{"id": "hyb-near-005", "query": "Please cancel my purchase before it gets dispatched", "expected_intent": "cancel_order", "type": "near_duplicate", "split": "dev"}
+{"id": "hyb-near-006", "query": "I need a PDF copy of the invoice for my company accounting", "expected_intent": "get_invoice", "type": "near_duplicate", "split": "dev"}
+{"id": "hyb-near-007", "query": "Why does my invoice show a higher amount than the checkout total?", "expected_intent": "check_invoice", "type": "near_duplicate", "split": "dev"}
+{"id": "hyb-near-008", "query": "I am moving to a different house, update delivery address on existing order", "expected_intent": "change_shipping_address", "type": "near_duplicate", "split": "dev"}
+{"id": "hyb-near-009", "query": "I am a new user, where do I enter my default delivery address in profile?", "expected_intent": "set_up_shipping_address", "type": "near_duplicate", "split": "dev"}
+{"id": "hyb-near-010", "query": "I need to talk to a living breathing human person right now", "expected_intent": "contact_human_agent", "type": "near_duplicate", "split": "dev"}
+{"id": "hyb-near-011", "query": "How do I reach the customer support help desk?", "expected_intent": "contact_customer_service", "type": "near_duplicate", "split": "dev"}
+{"id": "hyb-near-012", "query": "I have two accounts under different emails and want to switch between them", "expected_intent": "switch_account", "type": "near_duplicate", "split": "dev"}
+{"id": "hyb-near-013", "query": "How do I change my profile name and phone number on my account?", "expected_intent": "edit_account", "type": "near_duplicate", "split": "dev"}
+{"id": "hyb-near-014", "query": "How long will standard shipping take to arrive at my door?", "expected_intent": "delivery_period", "type": "near_duplicate", "split": "dev"}

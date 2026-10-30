@@ -63,6 +63,10 @@ class Settings(BaseSettings):
     reranker_enabled: bool = Field(default=True, validation_alias="RERANKER_ENABLED")
     rerank_model: str = Field(default="bge-reranker-v2-m3", validation_alias="RERANK_MODEL")
     rerank_fetch_k: int = Field(default=20, validation_alias="RERANK_FETCH_K")
+    hybrid_retrieval_enabled: bool = Field(
+        default=False, validation_alias="HYBRID_RETRIEVAL_ENABLED"
+    )
+    rrf_k: int = Field(default=60, validation_alias="RRF_K")
     # Reasoning effort & token caps per role
     reasoning_effort_scope: str | None = Field(
         default="low", validation_alias="REASONING_EFFORT_SCOPE"
