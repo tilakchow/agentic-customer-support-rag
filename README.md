@@ -167,15 +167,14 @@ uv run pytest tests -q
 uv run uvicorn agenticrag.api:app --host 0.0.0.0 --port 8000 --reload
 ```
 
-### 2. Frontend (React 19 + Vite)
+### 2. Frontend (Streamlit)
 
 ```bash
-cd frontend
-npm install
-npm run dev
+# Start Streamlit web application
+uv run --extra ui streamlit run frontend/app.py
 ```
 
-Visit [http://localhost:5173](http://localhost:5173) to interact with the web interface.
+Visit [http://localhost:8501](http://localhost:8501) to interact with the customer support interface.
 
 <details>
 <summary><b>⚙️ Environment Configuration Reference</b></summary>
@@ -234,11 +233,12 @@ agentic-customer-support-rag/
 │   ├── tools/               # Diagnostic evaluation utilities
 │   ├── SCOREBOARD.md        # Metric tracker with confidence intervals
 │   └── *.py                 # Benchmark runners (retrieval, latency, quality, etc.)
-├── frontend/                # React 19 single-page application
-└── tests/                   # 241 automated pytest unit and integration tests
+├── frontend/                # Streamlit web application & HTTP API client
+└── tests/                   # Automated pytest unit and integration tests
     ├── agent/               # Workflow execution & routing unit tests
     ├── api/                 # Endpoint contracts, SSE & tenancy tests
     ├── core/                # CLI, settings & schema tests
+    ├── frontend/            # Streamlit UI & API client tests
     ├── models/              # Model factory & client tests
     ├── quality/             # Grounding, citations & faithfulness tests
     ├── retrieval/           # BM25, vector search & cache tests
