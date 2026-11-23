@@ -17,6 +17,9 @@ node_modules/
 frontend/node_modules/
 frontend/dist/
 
+# Streamlit
+.streamlit/secrets.toml
+
 # Testing, cache, and coverage
 .coverage
 htmlcov/
