@@ -6,7 +6,7 @@
 </p>
 
 <p align="center">
-  <b>Production-grade, self-correcting customer support agent built with LangGraph, FastAPI, Pinecone, and React 19.</b>
+  <b>Production-grade, self-correcting customer support agent built with LangGraph, FastAPI, Pinecone, and Streamlit.</b>
 </p>
 
 <p align="center">
@@ -14,8 +14,8 @@
   <a href="https://fastapi.tiangolo.com"><img src="https://img.shields.io/badge/FastAPI-0.115+-009688?style=flat-square&logo=fastapi&logoColor=white" alt="FastAPI"></a>
   <a href="https://langchain.com/langgraph"><img src="https://img.shields.io/badge/LangGraph-1.2+-4F46E5?style=flat-square&logo=langchain&logoColor=white" alt="LangGraph"></a>
   <a href="https://www.pinecone.io"><img src="https://img.shields.io/badge/Pinecone-Serverless-000000?style=flat-square&logo=pinecone&logoColor=white" alt="Pinecone"></a>
-  <a href="https://react.dev"><img src="https://img.shields.io/badge/React-19-61DAFB?style=flat-square&logo=react&logoColor=black" alt="React 19"></a>
-  <a href="tests/"><img src="https://img.shields.io/badge/Tests-241%20Passing-10B981?style=flat-square&logo=pytest&logoColor=white" alt="Tests"></a>
+  <a href="https://streamlit.io"><img src="https://img.shields.io/badge/Streamlit-1.40+-FF4B4B?style=flat-square&logo=streamlit&logoColor=white" alt="Streamlit"></a>
+  <a href="tests/"><img src="https://img.shields.io/badge/Tests-254%20Passing-10B981?style=flat-square&logo=pytest&logoColor=white" alt="Tests"></a>
   <a href="https://github.com/tilakchow/agentic-customer-support-rag/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/tilakchow/agentic-customer-support-rag/ci.yml?branch=main&style=flat-square&logo=githubactions&logoColor=white&label=CI" alt="CI Status"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-334155?style=flat-square" alt="License MIT"></a>
 </p>
@@ -139,7 +139,7 @@ Measured on a 40-query stratified sample (`evals/reports/tokens.json`). Optimiza
 | **Embeddings** | ![FastEmbed](https://img.shields.io/badge/FastEmbed-all--MiniLM--L6--v2-2563EB?style=flat-square) | Local ONNX runtime producing 384-dimensional dense vectors |
 | **Reranker** | ![BGE](https://img.shields.io/badge/BGE-reranker--v2--m3-D97706?style=flat-square) | Neural cross-encoder rescoring top-20 candidates to top-4 |
 | **LLM Inference** | ![Groq](https://img.shields.io/badge/Groq-openai/gpt--oss--20b-F59E0B?style=flat-square) | Fast streaming inference with exponential retry backoff |
-| **Frontend** | ![React](https://img.shields.io/badge/React-19.2-61DAFB?style=flat-square&logo=react&logoColor=black) | Vite SPA, real-time SSE token streaming, light/dark theme |
+| **Frontend** | ![Streamlit](https://img.shields.io/badge/Streamlit-1.40+-FF4B4B?style=flat-square&logo=streamlit&logoColor=white) | Streamlit web UI, real-time SSE token streaming, reasoning timeline & citations |
 | **Auth & Tenancy** | ![JWT](https://img.shields.io/badge/JWT-HMAC--SHA256-E11D48?style=flat-square) | Scoped authentication, thread ownership, and tenant namespace isolation |
 
 ---
