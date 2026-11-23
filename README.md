@@ -160,7 +160,7 @@ uv sync
 cp .env.example .env
 # Set GROQ_API_KEY, PINECONE_API_KEY, and JWT_SECRET in .env
 
-# Run full test suite (241 tests)
+# Run full test suite (254 tests)
 uv run pytest tests -q
 
 # Start API server
@@ -174,7 +174,7 @@ uv run uvicorn agenticrag.api:app --host 0.0.0.0 --port 8000 --reload
 uv run --extra ui streamlit run frontend/app.py
 ```
 
-Visit [http://localhost:8501](http://localhost:8501) to interact with the customer support interface.
+Visit [http://localhost:8501](http://localhost:8501) to interact with the customer support interface. The frontend automatically connects to the backend at `http://localhost:8000` (configurable via `BACKEND_URL`).
 
 <details>
 <summary><b>⚙️ Environment Configuration Reference</b></summary>
@@ -194,6 +194,7 @@ Visit [http://localhost:8501](http://localhost:8501) to interact with the custom
 | `SKIP_GRADER_SCORE` | `0.45` | Similarity threshold to bypass LLM evidence grader |
 | `HYBRID_RETRIEVAL_ENABLED` | `false` | Enable BM25 + Dense Reciprocal Rank Fusion ($k=60$) |
 | `WEB_FALLBACK_ENABLED` | `false` | Enable external web search when KB evidence is weak |
+| `BACKEND_URL` | `http://localhost:8000` | Target backend URL for Streamlit frontend |
 </details>
 
 ---
@@ -234,7 +235,7 @@ agentic-customer-support-rag/
 │   ├── SCOREBOARD.md        # Metric tracker with confidence intervals
 │   └── *.py                 # Benchmark runners (retrieval, latency, quality, etc.)
 ├── frontend/                # Streamlit web application & HTTP API client
-└── tests/                   # Automated pytest unit and integration tests
+└── tests/                   # 254 automated pytest unit and integration tests
     ├── agent/               # Workflow execution & routing unit tests
     ├── api/                 # Endpoint contracts, SSE & tenancy tests
     ├── core/                # CLI, settings & schema tests
