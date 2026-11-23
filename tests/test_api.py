@@ -5,8 +5,8 @@ from unittest.mock import MagicMock
 import pytest
 from fastapi.testclient import TestClient
 
-import agenticrag.api as api_module
-from agenticrag.api import app, clean_thread_id
+import agenticrag.api.routes as api_module
+from agenticrag.api.routes import app, clean_thread_id
 
 
 @pytest.fixture(autouse=True)
@@ -116,8 +116,8 @@ def test_require_api_key_refuses_startup(monkeypatch):
     """When REQUIRE_API_KEY is true and API_KEY is empty, lifespan refuses to start."""
     import asyncio
 
-    from agenticrag.api import app, lifespan
-    from agenticrag.config import Settings
+    from agenticrag.api.routes import app, lifespan
+    from agenticrag.core.config import Settings
 
     fake_settings = Settings(require_api_key=True, api_key="")
     monkeypatch.setattr(api_module, "get_settings", lambda: fake_settings)
@@ -132,11 +132,11 @@ def test_require_api_key_refuses_startup(monkeypatch):
 
 def test_verify_api_key_auth(client, monkeypatch):
     """Verifies that when API_KEY is configured, requests require matching X-API-Key header."""
-    from agenticrag.config import Settings
+    from agenticrag.core.config import Settings
 
     fake_settings = Settings(api_key="secret-token-123")
-    monkeypatch.setattr("agenticrag.auth.get_settings", lambda: fake_settings)
-    monkeypatch.setattr("agenticrag.api.get_settings", lambda: fake_settings)
+    monkeypatch.setattr("agenticrag.api.auth.get_settings", lambda: fake_settings)
+    monkeypatch.setattr("agenticrag.api.routes.get_settings", lambda: fake_settings)
 
     # Missing API key -> 401
     res_missing = client.get("/kb/info")
@@ -153,11 +153,11 @@ def test_verify_api_key_auth(client, monkeypatch):
 
 def test_verify_api_key_unset_is_public(client, monkeypatch):
     """When API_KEY is empty/unset, endpoints are public and succeed without headers."""
-    from agenticrag.config import Settings
+    from agenticrag.core.config import Settings
 
     fake_settings = Settings(api_key="")
-    monkeypatch.setattr("agenticrag.auth.get_settings", lambda: fake_settings)
-    monkeypatch.setattr("agenticrag.api.get_settings", lambda: fake_settings)
+    monkeypatch.setattr("agenticrag.api.auth.get_settings", lambda: fake_settings)
+    monkeypatch.setattr("agenticrag.api.routes.get_settings", lambda: fake_settings)
 
     response = client.get("/kb/info")
     assert response.status_code == 200
@@ -241,8 +241,8 @@ def test_production_environment_refuses_startup_without_api_key(monkeypatch):
     """When ENVIRONMENT is production and API_KEY is empty, lifespan refuses to start."""
     import asyncio
 
-    from agenticrag.api import app, lifespan
-    from agenticrag.config import Settings
+    from agenticrag.api.routes import app, lifespan
+    from agenticrag.core.config import Settings
 
     fake_settings = Settings(environment="production", api_key="", jwt_secret="a" * 32)
     monkeypatch.setattr(api_module, "get_settings", lambda: fake_settings)
@@ -259,8 +259,8 @@ def test_get_client_rate_limit_key_resolution(monkeypatch):
     """Verifies that rate limit key properly verifies API keys against spoofing and resolves client IP."""
     from starlette.requests import Request
 
-    from agenticrag.api import get_client_rate_limit_key
-    from agenticrag.config import Settings
+    from agenticrag.api.routes import get_client_rate_limit_key
+    from agenticrag.core.config import Settings
 
     # Configure server with genuine secret
     monkeypatch.setattr(api_module, "get_settings", lambda: Settings(api_key="secret-token-xyz"))
@@ -298,7 +298,7 @@ def test_get_client_rate_limit_key_resolution(monkeypatch):
 
 def test_settings_allowed_origins_from_env(monkeypatch):
     """Verifies that comma-separated ALLOWED_ORIGINS string in env parses cleanly without NoDecode errors."""
-    from agenticrag.config import Settings
+    from agenticrag.core.config import Settings
 
     monkeypatch.setenv("ALLOWED_ORIGINS", "http://app.example.com, https://portal.example.com")
     settings = Settings()
@@ -328,8 +328,8 @@ def test_lifespan_refuses_in_memory_checkpointer_in_production(monkeypatch):
     """In production mode with no CHECKPOINT_DB and ALLOW_IN_MEMORY_CHECKPOINTS false, startup fails."""
     from fastapi import FastAPI
 
-    from agenticrag.api import lifespan
-    from agenticrag.config import Settings
+    from agenticrag.api.routes import lifespan
+    from agenticrag.core.config import Settings
 
     prod_settings = Settings(
         environment="production",
@@ -361,8 +361,8 @@ def test_lifespan_allows_in_memory_checkpointer_with_flag(monkeypatch):
     """In production mode, ALLOW_IN_MEMORY_CHECKPOINTS=true allows ephemeral in-memory startup."""
     from fastapi import FastAPI
 
-    from agenticrag.api import lifespan
-    from agenticrag.config import Settings
+    from agenticrag.api.routes import lifespan
+    from agenticrag.core.config import Settings
 
     prod_settings = Settings(
         environment="production",
@@ -390,8 +390,8 @@ def test_lifespan_refuses_startup_in_production_when_runtime_keys_missing(monkey
     """In production mode, missing runtime keys cause startup failure."""
     from fastapi import FastAPI
 
-    from agenticrag.api import lifespan
-    from agenticrag.config import Settings
+    from agenticrag.api.routes import lifespan
+    from agenticrag.core.config import Settings
 
     prod_settings = Settings(
         environment="production",
@@ -420,8 +420,8 @@ def test_lifespan_refuses_when_require_api_key_without_key(monkeypatch):
     """When require_api_key=True and API_KEY is empty, lifespan refuses to start."""
     from fastapi import FastAPI
 
-    from agenticrag.api import lifespan
-    from agenticrag.config import Settings
+    from agenticrag.api.routes import lifespan
+    from agenticrag.core.config import Settings
 
     settings = Settings(
         environment="development",
@@ -446,8 +446,8 @@ def test_lifespan_refuses_when_checkpointer_missing(monkeypatch):
     """When CHECKPOINT_DB is None and allow_in_memory_checkpoints=False, lifespan refuses startup."""
     from fastapi import FastAPI
 
-    from agenticrag.api import lifespan
-    from agenticrag.config import Settings
+    from agenticrag.api.routes import lifespan
+    from agenticrag.core.config import Settings
 
     settings = Settings(
         environment="development",

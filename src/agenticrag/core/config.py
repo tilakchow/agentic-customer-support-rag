@@ -7,7 +7,7 @@ from typing import Annotated, Literal
 from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
-from agenticrag.constants import KB_SAMPLE_SIZE
+from agenticrag.core.constants import KB_SAMPLE_SIZE
 
 logger = logging.getLogger(__name__)
 

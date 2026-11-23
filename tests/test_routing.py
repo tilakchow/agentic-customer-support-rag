@@ -2,8 +2,8 @@
 
 from langchain_core.messages import AIMessage, HumanMessage
 
-from agenticrag.node_meta import NodeName
-from agenticrag.routing import (
+from agenticrag.agent.node_meta import NodeName
+from agenticrag.agent.routing import (
     decide_after_kb_grade,
     decide_after_web_grade,
     get_conversation_history,
@@ -123,7 +123,7 @@ def test_get_conversation_history_deduplication():
 
 
 def test_validate_runtime_keys_smoke():
-    from agenticrag.config import Settings
+    from agenticrag.core.config import Settings
 
     settings = Settings(
         environment="development", groq_api_key="", tavily_api_key="", pinecone_api_key=""
@@ -136,7 +136,7 @@ def test_validate_runtime_keys_smoke():
 
 
 def test_compiled_agent_smoke():
-    from agenticrag.graph import create_agent
+    from agenticrag.agent.graph import create_agent
 
     app = create_agent()
     assert app is not None
@@ -185,7 +185,7 @@ def test_get_conversation_history_edge_cases():
 
 
 def test_is_internal_contact_query():
-    from agenticrag.routing import is_internal_contact_query
+    from agenticrag.agent.routing import is_internal_contact_query
 
     assert is_internal_contact_query("What is your customer service number?") is True
     assert is_internal_contact_query("Can I have the toll free helpline?") is True
@@ -193,7 +193,7 @@ def test_is_internal_contact_query():
 
 
 def test_is_proprietary_policy_query():
-    from agenticrag.routing import is_proprietary_policy_query
+    from agenticrag.agent.routing import is_proprietary_policy_query
 
     assert is_proprietary_policy_query("What is your refund policy?") is True
     assert is_proprietary_policy_query("Is there a 2-year warranty?") is True
@@ -201,7 +201,7 @@ def test_is_proprietary_policy_query():
 
 
 def test_is_allowed_web_fallback_query():
-    from agenticrag.routing import is_allowed_web_fallback_query
+    from agenticrag.agent.routing import is_allowed_web_fallback_query
 
     # Generic product / carrier / postal inquiries MUST be ALLOWED
     assert is_allowed_web_fallback_query("zip code lookup for shipment") is True
@@ -220,7 +220,7 @@ def test_is_allowed_web_fallback_query():
 
 
 def test_human_escalation_intent_phrases():
-    from agenticrag.routing import is_human_escalation_request
+    from agenticrag.agent.routing import is_human_escalation_request
 
     # Intent phrases must escalate
     assert is_human_escalation_request("I want to speak to a manager") is True
@@ -234,7 +234,7 @@ def test_human_escalation_intent_phrases():
 
 
 def test_policy_sensitive_intent_phrases():
-    from agenticrag.routing import is_policy_sensitive_request
+    from agenticrag.agent.routing import is_policy_sensitive_request
 
     assert is_policy_sensitive_request("I will take you to court") is True
     assert is_policy_sensitive_request("I am contacting my lawyer") is True
@@ -247,7 +247,7 @@ def test_get_truncated_conversation_history():
     """get_truncated_conversation_history truncates assistant messages to character limit and respects limit N."""
     from langchain_core.messages import AIMessage, HumanMessage
 
-    from agenticrag.routing import get_truncated_conversation_history
+    from agenticrag.agent.routing import get_truncated_conversation_history
 
     long_assistant_msg = "A" * 350
     state = {

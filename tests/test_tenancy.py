@@ -6,14 +6,14 @@ import pytest
 from langchain_core.messages import AIMessage
 from starlette.testclient import TestClient
 
-import agenticrag.api as api_module
-from agenticrag.api import app
-from agenticrag.auth import (
+import agenticrag.api.routes as api_module
+from agenticrag.api.auth import (
     create_jwt,
     decode_jwt,
     get_tenancy_manager,
     get_tenant_namespace,
 )
+from agenticrag.api.routes import app
 
 
 @pytest.fixture(autouse=True)
@@ -68,7 +68,7 @@ def test_jwt_expired_token_rejection():
 
     import jwt
 
-    from agenticrag.config import get_settings
+    from agenticrag.core.config import get_settings
 
     expired_payload = {
         "sub": "user-expired",
@@ -121,7 +121,7 @@ def test_jwt_missing_exp_rejection():
     """Rejects JWTs missing required 'exp' claim."""
     import jwt
 
-    from agenticrag.config import get_settings
+    from agenticrag.core.config import get_settings
 
     token = jwt.encode(
         {"sub": "user-no-exp", "tenant_id": "tenant-corp"},
@@ -161,7 +161,7 @@ def test_header_spoofing_attempt():
 
 def test_production_weak_secret_startup_failure():
     """In production, settings validation must raise ValueError if JWT_SECRET is unset or < 32 chars."""
-    from agenticrag.config import Settings
+    from agenticrag.core.config import Settings
 
     with pytest.raises(ValueError, match="JWT_SECRET must be set and at least 32 characters"):
         Settings(environment="production", jwt_secret="")
@@ -178,7 +178,7 @@ def test_production_weak_secret_startup_failure():
 
 def test_redis_thread_tenancy_storage(monkeypatch):
     """Verifies RedisThreadTenancyStorage binds and reads thread owners."""
-    from agenticrag.auth import RedisThreadTenancyStorage
+    from agenticrag.api.auth import RedisThreadTenancyStorage
 
     mock_redis_client = MagicMock()
     mock_store = {}
@@ -282,11 +282,11 @@ def test_scoped_kb_search_tenant_isolation():
 @pytest.mark.asyncio
 async def test_retrieve_kb_node_tenant_namespace_isolation(monkeypatch):
     """Verifies nodes.retrieve_kb queries vectorstore using caller tenant namespace."""
-    from agenticrag.nodes import retrieve_kb
+    from agenticrag.agent.nodes import retrieve_kb
 
     mock_vs = MagicMock()
     mock_vs.similarity_search_with_score.return_value = []
-    monkeypatch.setattr("agenticrag.nodes.get_vectorstore", lambda: mock_vs)
+    monkeypatch.setattr("agenticrag.agent.nodes.get_vectorstore", lambda: mock_vs)
 
     # State with Tenant Alpha
     state_alpha = {

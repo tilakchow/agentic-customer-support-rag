@@ -1,6 +1,6 @@
 """Benchmark script for Milestone T7 hybrid retrieval experiment.
 
-Evaluates dense retrieval vs dense + BM25 reciprocal rank fusion (RRF k=60) on evals/golden_hybrid.jsonl.
+Evaluates dense retrieval vs dense + BM25 reciprocal rank fusion (RRF k=60) on evals/datasets/golden_hybrid.jsonl.
 Reports Recall@4, Precision@4, MRR, bootstrap 95% CIs, and p50/p95 latency.
 """
 
@@ -10,7 +10,7 @@ import random
 import time
 from typing import Any
 
-from agenticrag.retrieval import retrieve_kb
+from agenticrag.retrieval.retrieval import retrieve_kb
 
 
 def boot_ci(vals: list[float], n_boot: int = 2000, seed: int = 42) -> tuple[float, float]:
@@ -87,7 +87,7 @@ def evaluate_split(
 def main():
     parser = argparse.ArgumentParser(description="Evaluate hybrid retrieval performance.")
     parser.add_argument(
-        "--dataset", default="evals/golden_hybrid.jsonl", help="Hard cases dataset path"
+        "--dataset", default="evals/datasets/golden_hybrid.jsonl", help="Hard cases dataset path"
     )
     args = parser.parse_args()
 

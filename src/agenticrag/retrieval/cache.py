@@ -11,7 +11,7 @@ from collections import OrderedDict
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from agenticrag.config import get_settings
+from agenticrag.core.config import get_settings
 
 logger = logging.getLogger(__name__)
 

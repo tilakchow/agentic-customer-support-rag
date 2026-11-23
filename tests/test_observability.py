@@ -5,9 +5,13 @@ from datetime import UTC, datetime
 import pytest
 from starlette.testclient import TestClient
 
-from agenticrag.api import app
-from agenticrag.metrics import get_provider_metrics, record_provider_failure, reset_metrics
-from agenticrag.telemetry import TelemetryCollector, get_telemetry_collector
+from agenticrag.api.routes import app
+from agenticrag.telemetry.metrics import (
+    get_provider_metrics,
+    record_provider_failure,
+    reset_metrics,
+)
+from agenticrag.telemetry.telemetry import TelemetryCollector, get_telemetry_collector
 
 
 @pytest.fixture(autouse=True)
@@ -129,7 +133,7 @@ async def test_traced_node_records_non_zero_duration():
     """Ensures @traced_node accurately measures real non-zero execution duration for async nodes."""
     import asyncio
 
-    from agenticrag.telemetry import traced_node
+    from agenticrag.telemetry.telemetry import traced_node
 
     collector = get_telemetry_collector()
     collector.clear()

@@ -8,9 +8,9 @@ import json
 import random
 from typing import Any
 
-from agenticrag.config import get_settings
-from agenticrag.constants import RETRIEVER_K
-from agenticrag.retrieval import retrieve_kb
+from agenticrag.core.config import get_settings
+from agenticrag.core.constants import RETRIEVER_K
+from agenticrag.retrieval.retrieval import retrieve_kb
 
 
 def boot_ci(vals: list[float], n_boot: int = 2000, seed: int = 0) -> tuple[float, float]:
@@ -149,7 +149,9 @@ def evaluate_retrieval(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Evaluate KB retrieval and evidence scores.")
-    parser.add_argument("path", nargs="?", default="evals/golden.jsonl", help="Dataset path")
+    parser.add_argument(
+        "path", nargs="?", default="evals/datasets/golden.jsonl", help="Dataset path"
+    )
     parser.add_argument("split", nargs="?", default="dev", help="Dataset split (dev or test)")
     parser.add_argument(
         "thresh", nargs="?", type=float, default=0.0, help="Recall@4 threshold gate"

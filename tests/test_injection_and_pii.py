@@ -3,8 +3,8 @@
 import pytest
 from langchain_core.messages import HumanMessage
 
-from agenticrag.nodes import classify_scope, refuse_out_of_scope
-from agenticrag.security import (
+from agenticrag.agent.nodes import classify_scope, refuse_out_of_scope
+from agenticrag.security.security import (
     CANARY_TOKEN,
     filter_canary_and_leaks,
     is_prompt_injection,
@@ -110,7 +110,7 @@ async def test_refuse_out_of_scope_handles_injection_safely():
 
 def test_luhn_card_validation_and_order_preservation():
     """Ensures valid cards pass Luhn and are redacted, while order numbers and invalid cards are preserved."""
-    from agenticrag.security import (
+    from agenticrag.security.security import (
         luhn_checksum_valid,
         redact_pii_with_mapping,
         restore_pii_mapping,
@@ -152,7 +152,7 @@ def test_luhn_card_validation_and_order_preservation():
 @pytest.mark.asyncio
 async def test_no_raw_pii_in_tickets_or_escalations(caplog):
     """Ensures ticket payloads and escalation outputs never store raw card numbers, emails, or SSNs."""
-    from agenticrag.nodes import escalate_to_human
+    from agenticrag.agent.nodes import escalate_to_human
 
     sensitive_query = (
         "Help me with refund for card 4532015012345671, email user@private.org, SSN 123-45-6789"

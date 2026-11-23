@@ -6,17 +6,17 @@ import pytest
 from langchain_core.documents import Document
 from langchain_core.messages import HumanMessage
 
-from agenticrag.graph import create_agent
-from agenticrag.node_meta import NodeName
-from agenticrag.nodes import classify_scope, escalate_to_human, refuse_out_of_scope
-from agenticrag.routing import (
+from agenticrag.agent.graph import create_agent
+from agenticrag.agent.node_meta import NodeName
+from agenticrag.agent.nodes import classify_scope, escalate_to_human, refuse_out_of_scope
+from agenticrag.agent.routing import (
     decide_after_kb_grade,
     is_allowed_web_fallback_query,
     is_human_escalation_request,
     is_policy_sensitive_request,
     route_after_scope,
 )
-from agenticrag.schemas import ScopeDecision
+from agenticrag.core.schemas import ScopeDecision
 
 
 def test_scope_decision_schema_defaults_and_aliases():
@@ -158,7 +158,7 @@ async def test_classify_scope_heuristics():
 @pytest.mark.asyncio
 async def test_classify_scope_llm_invocation():
     """Validates structured LLM classification when heuristics do not fast-track."""
-    with patch("agenticrag.nodes.get_classifier_llm") as mock_classifier:
+    with patch("agenticrag.agent.nodes.get_classifier_llm") as mock_classifier:
         mock_classifier.return_value.ainvoke = AsyncMock(
             return_value=ScopeDecision(scope="in_scope", reason="standard order inquiry")
         )
@@ -172,10 +172,10 @@ async def test_classify_scope_llm_invocation():
 @pytest.mark.asyncio
 async def test_classify_scope_fallback_on_llm_error(monkeypatch):
     """Validates fail-closed (default) and fail-open error handling when classifier LLM fails."""
-    import agenticrag.nodes as nodes_module
-    from agenticrag.config import Settings
+    import agenticrag.agent.nodes as nodes_module
+    from agenticrag.core.config import Settings
 
-    with patch("agenticrag.nodes.get_classifier_llm") as mock_classifier:
+    with patch("agenticrag.agent.nodes.get_classifier_llm") as mock_classifier:
         mock_classifier.return_value.ainvoke = AsyncMock(side_effect=RuntimeError("LLM 503 error"))
 
         # Default fail_mode_scope_classifier = "closed" -> routes to error_insufficient
@@ -211,8 +211,8 @@ async def test_e2e_out_of_scope_refusal_bypasses_retrieval_and_web():
     app = create_agent()
 
     with (
-        patch("agenticrag.nodes.get_vectorstore") as mock_vs,
-        patch("agenticrag.nodes.get_web_search") as mock_web,
+        patch("agenticrag.agent.nodes.get_vectorstore") as mock_vs,
+        patch("agenticrag.agent.nodes.get_web_search") as mock_web,
     ):
         result = await app.ainvoke(
             {
@@ -236,8 +236,8 @@ async def test_e2e_human_escalation_generates_ticket_payload():
     app = create_agent()
 
     with (
-        patch("agenticrag.nodes.get_vectorstore") as mock_vs,
-        patch("agenticrag.nodes.get_web_search") as mock_web,
+        patch("agenticrag.agent.nodes.get_vectorstore") as mock_vs,
+        patch("agenticrag.agent.nodes.get_web_search") as mock_web,
     ):
         result = await app.ainvoke(
             {"messages": [HumanMessage(content="Please transfer me to a human representative")]},

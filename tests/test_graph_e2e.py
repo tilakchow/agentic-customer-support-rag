@@ -6,8 +6,8 @@ import pytest
 from langchain_core.documents import Document
 from langchain_core.messages import AIMessage, HumanMessage
 
-from agenticrag.graph import create_agent
-from agenticrag.schemas import ClaimSupportCheck, EvidenceGrade, RouteDecision, ScopeDecision
+from agenticrag.agent.graph import create_agent
+from agenticrag.core.schemas import ClaimSupportCheck, EvidenceGrade, RouteDecision, ScopeDecision
 
 
 @pytest.fixture
@@ -17,7 +17,7 @@ def agent_app():
 
 @pytest.fixture(autouse=True)
 def default_mock_classifier():
-    with patch("agenticrag.nodes.get_classifier_llm") as mock:
+    with patch("agenticrag.agent.nodes.get_classifier_llm") as mock:
         mock.return_value.ainvoke = AsyncMock(
             return_value=ScopeDecision(scope="in_scope", reasoning="In scope test query")
         )
@@ -26,7 +26,7 @@ def default_mock_classifier():
 
 @pytest.fixture(autouse=True)
 def default_mock_faithfulness():
-    with patch("agenticrag.nodes.get_faithfulness_llm") as mock:
+    with patch("agenticrag.agent.nodes.get_faithfulness_llm") as mock:
         mock.return_value.ainvoke = AsyncMock(
             return_value=ClaimSupportCheck(supported=True, reason="Grounded in test context")
         )
@@ -37,8 +37,8 @@ def default_mock_faithfulness():
 async def test_e2e_direct_route(agent_app):
     """Direct route: greetings/chit-chat bypasses retrieval and generates direct answer."""
     with (
-        patch("agenticrag.nodes.get_router_llm") as mock_router,
-        patch("agenticrag.nodes.get_llm") as mock_llm,
+        patch("agenticrag.agent.nodes.get_router_llm") as mock_router,
+        patch("agenticrag.agent.nodes.get_llm") as mock_llm,
     ):
         mock_router.return_value.ainvoke = AsyncMock(return_value=RouteDecision(route="direct"))
         mock_llm.return_value.ainvoke = AsyncMock(
@@ -65,10 +65,10 @@ async def test_e2e_kb_good(agent_app):
     mock_vs.similarity_search_with_score.return_value = [(sample_doc, 0.88)]
 
     with (
-        patch("agenticrag.nodes.get_router_llm") as mock_router,
-        patch("agenticrag.nodes.get_vectorstore", return_value=mock_vs),
-        patch("agenticrag.nodes.get_grader_llm") as mock_grader,
-        patch("agenticrag.nodes.get_llm") as mock_llm,
+        patch("agenticrag.agent.nodes.get_router_llm") as mock_router,
+        patch("agenticrag.agent.nodes.get_vectorstore", return_value=mock_vs),
+        patch("agenticrag.agent.nodes.get_grader_llm") as mock_grader,
+        patch("agenticrag.agent.nodes.get_llm") as mock_llm,
     ):
         mock_router.return_value.ainvoke = AsyncMock(return_value=RouteDecision(route="kb"))
         mock_grader.return_value.ainvoke = AsyncMock(return_value=EvidenceGrade(grade="good"))
@@ -99,14 +99,14 @@ async def test_e2e_kb_weak_to_web_good(agent_app):
 
     with (
         patch(
-            "agenticrag.routing.get_settings",
+            "agenticrag.agent.routing.get_settings",
             return_value=MagicMock(web_fallback_enabled=True, max_retries=1),
         ),
-        patch("agenticrag.nodes.get_router_llm") as mock_router,
-        patch("agenticrag.nodes.get_vectorstore", return_value=mock_vs),
-        patch("agenticrag.nodes.get_grader_llm") as mock_grader,
-        patch("agenticrag.nodes.get_web_search", return_value=mock_search),
-        patch("agenticrag.nodes.get_llm") as mock_llm,
+        patch("agenticrag.agent.nodes.get_router_llm") as mock_router,
+        patch("agenticrag.agent.nodes.get_vectorstore", return_value=mock_vs),
+        patch("agenticrag.agent.nodes.get_grader_llm") as mock_grader,
+        patch("agenticrag.agent.nodes.get_web_search", return_value=mock_search),
+        patch("agenticrag.agent.nodes.get_llm") as mock_llm,
     ):
         mock_router.return_value.ainvoke = AsyncMock(return_value=RouteDecision(route="kb"))
         # First call is KB grader (weak), second is Web grader (good)
@@ -142,15 +142,15 @@ async def test_e2e_weak_rewrite_to_insufficient(agent_app):
 
     with (
         patch(
-            "agenticrag.routing.get_settings",
+            "agenticrag.agent.routing.get_settings",
             return_value=MagicMock(web_fallback_enabled=True, max_retries=1),
         ),
-        patch("agenticrag.nodes.get_classifier_llm") as mock_classifier,
-        patch("agenticrag.nodes.get_router_llm") as mock_router,
-        patch("agenticrag.nodes.get_vectorstore", return_value=mock_vs),
-        patch("agenticrag.nodes.get_grader_llm") as mock_grader,
-        patch("agenticrag.nodes.get_web_search", return_value=mock_search),
-        patch("agenticrag.nodes.get_llm") as mock_llm,
+        patch("agenticrag.agent.nodes.get_classifier_llm") as mock_classifier,
+        patch("agenticrag.agent.nodes.get_router_llm") as mock_router,
+        patch("agenticrag.agent.nodes.get_vectorstore", return_value=mock_vs),
+        patch("agenticrag.agent.nodes.get_grader_llm") as mock_grader,
+        patch("agenticrag.agent.nodes.get_web_search", return_value=mock_search),
+        patch("agenticrag.agent.nodes.get_llm") as mock_llm,
     ):
         mock_classifier.return_value.ainvoke = AsyncMock(
             return_value=ScopeDecision(scope="in_scope")
@@ -186,11 +186,11 @@ async def test_e2e_contact_query_skips_web(agent_app):
     mock_vs.similarity_search_with_score.return_value = []
 
     with (
-        patch("agenticrag.nodes.get_router_llm") as mock_router,
-        patch("agenticrag.nodes.get_vectorstore", return_value=mock_vs),
-        patch("agenticrag.nodes.get_grader_llm") as mock_grader,
-        patch("agenticrag.nodes.get_web_search") as mock_web_search,
-        patch("agenticrag.nodes.get_llm") as mock_llm,
+        patch("agenticrag.agent.nodes.get_router_llm") as mock_router,
+        patch("agenticrag.agent.nodes.get_vectorstore", return_value=mock_vs),
+        patch("agenticrag.agent.nodes.get_grader_llm") as mock_grader,
+        patch("agenticrag.agent.nodes.get_web_search") as mock_web_search,
+        patch("agenticrag.agent.nodes.get_llm") as mock_llm,
     ):
         mock_router.return_value.ainvoke = AsyncMock(return_value=RouteDecision(route="kb"))
         mock_grader.return_value.ainvoke = AsyncMock(return_value=EvidenceGrade(grade="weak"))
@@ -229,14 +229,14 @@ async def test_e2e_pinecone_failure_falls_back_to_web(agent_app):
 
     with (
         patch(
-            "agenticrag.routing.get_settings",
+            "agenticrag.agent.routing.get_settings",
             return_value=MagicMock(web_fallback_enabled=True, max_retries=1),
         ),
-        patch("agenticrag.nodes.get_router_llm") as mock_router,
-        patch("agenticrag.nodes.get_vectorstore", return_value=mock_vs),
-        patch("agenticrag.nodes.get_grader_llm") as mock_grader,
-        patch("agenticrag.nodes.get_web_search", return_value=mock_search),
-        patch("agenticrag.nodes.get_llm") as mock_llm,
+        patch("agenticrag.agent.nodes.get_router_llm") as mock_router,
+        patch("agenticrag.agent.nodes.get_vectorstore", return_value=mock_vs),
+        patch("agenticrag.agent.nodes.get_grader_llm") as mock_grader,
+        patch("agenticrag.agent.nodes.get_web_search", return_value=mock_search),
+        patch("agenticrag.agent.nodes.get_llm") as mock_llm,
     ):
         mock_router.return_value.ainvoke = AsyncMock(return_value=RouteDecision(route="kb"))
         mock_grader.return_value.ainvoke = AsyncMock(return_value=EvidenceGrade(grade="good"))
@@ -265,14 +265,14 @@ async def test_e2e_tavily_failure_falls_back_to_insufficient(agent_app):
 
     with (
         patch(
-            "agenticrag.routing.get_settings",
+            "agenticrag.agent.routing.get_settings",
             return_value=MagicMock(web_fallback_enabled=True, max_retries=1),
         ),
-        patch("agenticrag.nodes.get_router_llm") as mock_router,
-        patch("agenticrag.nodes.get_vectorstore", return_value=mock_vs),
-        patch("agenticrag.nodes.get_grader_llm") as mock_grader,
-        patch("agenticrag.nodes.get_web_search", return_value=mock_search),
-        patch("agenticrag.nodes.get_llm") as mock_llm,
+        patch("agenticrag.agent.nodes.get_router_llm") as mock_router,
+        patch("agenticrag.agent.nodes.get_vectorstore", return_value=mock_vs),
+        patch("agenticrag.agent.nodes.get_grader_llm") as mock_grader,
+        patch("agenticrag.agent.nodes.get_web_search", return_value=mock_search),
+        patch("agenticrag.agent.nodes.get_llm") as mock_llm,
     ):
         mock_router.return_value.ainvoke = AsyncMock(return_value=RouteDecision(route="kb"))
         mock_grader.return_value.ainvoke = AsyncMock(return_value=EvidenceGrade(grade="weak"))
@@ -301,10 +301,10 @@ async def test_e2e_groq_failure_containment(agent_app):
     ]
 
     with (
-        patch("agenticrag.nodes.get_router_llm") as mock_router,
-        patch("agenticrag.nodes.get_vectorstore", return_value=mock_vs),
-        patch("agenticrag.nodes.get_grader_llm") as mock_grader,
-        patch("agenticrag.nodes.get_llm") as mock_llm,
+        patch("agenticrag.agent.nodes.get_router_llm") as mock_router,
+        patch("agenticrag.agent.nodes.get_vectorstore", return_value=mock_vs),
+        patch("agenticrag.agent.nodes.get_grader_llm") as mock_grader,
+        patch("agenticrag.agent.nodes.get_llm") as mock_llm,
     ):
         mock_router.return_value.ainvoke = AsyncMock(return_value=RouteDecision(route="kb"))
         mock_grader.return_value.ainvoke = AsyncMock(return_value=EvidenceGrade(grade="good"))
@@ -325,16 +325,16 @@ async def test_e2e_groq_failure_containment(agent_app):
 @pytest.mark.asyncio
 async def test_e2e_thread_messages_trimmed(agent_app, monkeypatch):
     """Verifies that thread history is capped at max_thread_messages and graph continues running."""
-    import agenticrag.config as config_module
-    from agenticrag.config import Settings
+    import agenticrag.core.config as config_module
+    from agenticrag.core.config import Settings
 
     custom_settings = Settings(max_thread_messages=4)
     monkeypatch.setattr(config_module, "get_settings", lambda: custom_settings)
-    monkeypatch.setattr("agenticrag.state.get_settings", lambda: custom_settings)
+    monkeypatch.setattr("agenticrag.agent.state.get_settings", lambda: custom_settings)
 
     with (
-        patch("agenticrag.nodes.get_router_llm") as mock_router,
-        patch("agenticrag.nodes.get_llm") as mock_llm,
+        patch("agenticrag.agent.nodes.get_router_llm") as mock_router,
+        patch("agenticrag.agent.nodes.get_llm") as mock_llm,
     ):
         mock_router.return_value.ainvoke = AsyncMock(return_value=RouteDecision(route="direct"))
         mock_llm.return_value.ainvoke = AsyncMock(return_value=AIMessage(content="Direct reply"))

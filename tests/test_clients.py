@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from agenticrag.clients import (
+from agenticrag.models.clients import (
     RETRIEVER_BACKOFF_SECONDS,
     get_embeddings,
     get_grader_llm,
@@ -17,7 +17,7 @@ from agenticrag.clients import (
     reset_clients,
     warm_up_clients,
 )
-from agenticrag.metrics import (
+from agenticrag.telemetry.metrics import (
     get_provider_metrics,
     record_provider_failure,
     reset_metrics,
@@ -103,7 +103,7 @@ def test_get_embeddings_cached():
 
 def test_get_vectorstore_returns_none_when_api_key_empty():
     """get_vectorstore returns None when PINECONE_API_KEY is not configured."""
-    with patch("agenticrag.clients.get_settings") as mock_settings:
+    with patch("agenticrag.models.clients.get_settings") as mock_settings:
         mock_settings.return_value.pinecone_api_key = ""
         vs = get_vectorstore()
         assert vs is None
@@ -111,7 +111,7 @@ def test_get_vectorstore_returns_none_when_api_key_empty():
 
 def test_get_vectorstore_failure_backoff():
     """When Pinecone connection fails, backoff window suppresses retries for 30 seconds."""
-    with patch("agenticrag.clients.get_settings") as mock_settings:
+    with patch("agenticrag.models.clients.get_settings") as mock_settings:
         mock_settings.return_value.pinecone_api_key = "test-key"
         mock_settings.return_value.index_name = "test-index"
         mock_settings.return_value.namespace = "test-ns"
@@ -130,9 +130,9 @@ def test_get_vectorstore_failure_backoff():
 
 def test_get_vectorstore_backoff_expiry():
     """When 30s backoff expires, subsequent get_vectorstore call retries connection."""
-    import agenticrag.clients as clients_mod
+    import agenticrag.models.clients as clients_mod
 
-    with patch("agenticrag.clients.get_settings") as mock_settings:
+    with patch("agenticrag.models.clients.get_settings") as mock_settings:
         mock_settings.return_value.pinecone_api_key = "test-key"
         mock_settings.return_value.index_name = "test-index"
         mock_settings.return_value.namespace = "test-ns"
@@ -145,7 +145,7 @@ def test_get_vectorstore_backoff_expiry():
             mock_pc.return_value.Index.return_value = mock_index
             with (
                 patch("langchain_pinecone.PineconeVectorStore") as mock_pvs,
-                patch("agenticrag.clients.get_embeddings") as mock_emb,
+                patch("agenticrag.models.clients.get_embeddings") as mock_emb,
             ):
                 mock_pvs.return_value = MagicMock()
                 mock_emb.return_value = MagicMock()
@@ -156,14 +156,14 @@ def test_get_vectorstore_backoff_expiry():
 
 def test_get_retriever_none_when_vectorstore_unavailable():
     """get_retriever returns None if get_vectorstore returns None."""
-    with patch("agenticrag.clients.get_vectorstore", return_value=None):
+    with patch("agenticrag.models.clients.get_vectorstore", return_value=None):
         retriever = get_retriever()
         assert retriever is None
 
 
 def test_warm_up_clients_tolerates_missing_keys():
     """warm_up_clients executes cleanly even when external credentials are empty."""
-    with patch("agenticrag.clients.get_settings") as mock_settings:
+    with patch("agenticrag.models.clients.get_settings") as mock_settings:
         mock_settings.return_value.groq_api_key = ""
         mock_settings.return_value.pinecone_api_key = ""
         # Should not raise
@@ -185,7 +185,7 @@ def test_metrics_recording_and_reset():
 
 def test_role_reasoning_effort_and_max_tokens():
     """get_classifier_llm, get_router_llm, get_grader_llm, and get_faithfulness_llm pass configured reasoning_effort and max_tokens."""
-    from agenticrag.clients import get_classifier_llm, get_faithfulness_llm
+    from agenticrag.models.clients import get_classifier_llm, get_faithfulness_llm
 
     with patch("langchain_groq.ChatGroq") as mock_groq:
         mock_groq.return_value = MagicMock()

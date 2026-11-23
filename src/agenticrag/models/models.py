@@ -2,7 +2,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
 
-from agenticrag.config import get_settings
+from agenticrag.core.config import get_settings
 
 
 class ChatRequest(BaseModel):

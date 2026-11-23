@@ -1,6 +1,6 @@
 import re
 
-from agenticrag.security import CANARY_TOKEN
+from agenticrag.security.security import CANARY_TOKEN
 
 # --- Customer Support System & Node Prompts ---
 

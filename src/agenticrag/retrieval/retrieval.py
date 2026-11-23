@@ -6,10 +6,10 @@ from typing import Any, Literal, NamedTuple
 from langchain_core.documents import Document
 from tenacity import retry, retry_if_exception, stop_after_delay, wait_random_exponential
 
-from agenticrag.clients import get_pinecone_client, get_vectorstore
-from agenticrag.config import Settings, get_settings
-from agenticrag.constants import RETRIEVER_K
-from agenticrag.telemetry import get_telemetry_collector
+from agenticrag.core.config import Settings, get_settings
+from agenticrag.core.constants import RETRIEVER_K
+from agenticrag.models.clients import get_pinecone_client, get_vectorstore
+from agenticrag.telemetry.telemetry import get_telemetry_collector
 
 logger = logging.getLogger(__name__)
 
@@ -69,7 +69,7 @@ def get_bm25_retriever(settings: Settings | None = None) -> tuple[Any, list[Docu
         from datasets import load_dataset
         from rank_bm25 import BM25Okapi
 
-        from agenticrag.constants import DATASET_NAME
+        from agenticrag.core.constants import DATASET_NAME
 
         dataset = load_dataset(DATASET_NAME, split="train")
         sample_size = min(len(dataset), settings.kb_sample_size)

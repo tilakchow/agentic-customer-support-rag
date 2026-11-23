@@ -8,13 +8,13 @@ import pytest
 from langchain_core.documents import Document
 from langchain_core.messages import HumanMessage
 
-from agenticrag.node_meta import NodeName
-from agenticrag.prompts import sanitize_untrusted_context
-from agenticrag.routing import (
+from agenticrag.agent.node_meta import NodeName
+from agenticrag.agent.routing import (
     decide_after_kb_grade,
     is_internal_contact_query,
     is_proprietary_policy_query,
 )
+from agenticrag.prompts.prompts import sanitize_untrusted_context
 
 # --- 30-Item Golden Evaluation Dataset ---
 GOLDEN_EVAL_DATASET = [
@@ -138,7 +138,7 @@ async def test_high_similarity_score_skips_grader():
     """High similarity score (>= calibrated 0.45) qualifies KB evidence directly without invoking the LLM grader."""
     from unittest.mock import patch
 
-    from agenticrag.nodes import grade_kb_evidence
+    from agenticrag.agent.nodes import grade_kb_evidence
 
     docs = [
         Document(
@@ -153,7 +153,7 @@ async def test_high_similarity_score_skips_grader():
         "score_type": "rerank",
     }
 
-    with patch("agenticrag.nodes.get_grader_llm") as mock_grader:
+    with patch("agenticrag.agent.nodes.get_grader_llm") as mock_grader:
         result = await grade_kb_evidence(state)
         mock_grader.assert_not_called()
         assert result["kb_grade"] == "good"

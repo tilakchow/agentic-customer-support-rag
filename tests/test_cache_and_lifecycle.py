@@ -9,10 +9,13 @@ from langchain_core.documents import Document
 from langchain_core.messages import AIMessage
 from starlette.testclient import TestClient
 
-import agenticrag.api as api_module
-from agenticrag.api import app
-from agenticrag.cache import ResponseCache, get_response_cache
-from agenticrag.ingest import diff_chunks_against_manifest, enrich_chunks_with_lifecycle_metadata
+import agenticrag.api.routes as api_module
+from agenticrag.api.routes import app
+from agenticrag.retrieval.cache import ResponseCache, get_response_cache
+from agenticrag.retrieval.ingest import (
+    diff_chunks_against_manifest,
+    enrich_chunks_with_lifecycle_metadata,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -234,7 +237,7 @@ def test_cache_hit_preserves_history_for_next_turn(monkeypatch):
 
 def test_different_tenants_never_share_cache(monkeypatch):
     """Tenant A's cached response is never accessible to Tenant B."""
-    from agenticrag.auth import create_jwt
+    from agenticrag.api.auth import create_jwt
 
     client = TestClient(app)
     cache = get_response_cache()

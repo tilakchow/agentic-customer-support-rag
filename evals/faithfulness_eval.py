@@ -10,9 +10,9 @@ import json
 import math
 from typing import Any
 
-from agenticrag.config import get_settings
-from agenticrag.nodes import check_claim_support
-from agenticrag.schemas import ClaimSupportCheck
+from agenticrag.agent.nodes import check_claim_support
+from agenticrag.core.config import get_settings
+from agenticrag.core.schemas import ClaimSupportCheck
 
 # 40 Curated Benchmark Evaluation Cases (20 Grounded, 20 Planted Hallucinations)
 FAITHFULNESS_BENCHMARK_CASES: list[dict[str, Any]] = [

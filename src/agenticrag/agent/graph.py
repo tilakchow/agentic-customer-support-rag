@@ -2,8 +2,8 @@ from typing import Any
 
 from langgraph.graph import END, START, StateGraph
 
-from agenticrag.node_meta import NodeName
-from agenticrag.nodes import (
+from agenticrag.agent.node_meta import NodeName
+from agenticrag.agent.nodes import (
     answer_insufficient,
     classify_scope,
     condense_query,
@@ -20,13 +20,13 @@ from agenticrag.nodes import (
     route_question,
     search_web,
 )
-from agenticrag.routing import (
+from agenticrag.agent.routing import (
     decide_after_kb_grade,
     decide_after_web_grade,
     route_after_router,
     route_after_scope,
 )
-from agenticrag.state import AgentState
+from agenticrag.agent.state import AgentState
 
 
 def create_agent(checkpointer: Any = None):

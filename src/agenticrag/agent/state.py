@@ -6,7 +6,7 @@ from langchain_core.documents import Document
 from langchain_core.messages import AnyMessage
 from langgraph.graph.message import add_messages
 
-from agenticrag.config import get_settings
+from agenticrag.core.config import get_settings
 
 
 def trim_messages_reducer(

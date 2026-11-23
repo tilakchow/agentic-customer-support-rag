@@ -14,7 +14,7 @@ from typing import Any
 
 import httpx
 
-from agenticrag.api import app
+from agenticrag.api.routes import app
 
 logger = logging.getLogger(__name__)
 

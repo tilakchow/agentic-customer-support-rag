@@ -13,19 +13,19 @@ from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from starlette.middleware.cors import CORSMiddleware
 
-from agenticrag.auth import (
+from agenticrag.agent.graph import create_agent
+from agenticrag.api.auth import (
     AuthenticatedUser,
     get_authenticated_user,
     get_tenancy_manager,
     get_tenant_namespace,
     verify_api_key,
 )
-from agenticrag.clients import get_retriever, warm_up_clients
-from agenticrag.config import get_settings
-from agenticrag.constants import DATASET_NAME, EMBEDDING_DIM, RETRIEVER_K
-from agenticrag.graph import create_agent
-from agenticrag.models import ChatRequest, ChatResponse, KBSearchRequest
-from agenticrag.sse import stream_agent_generator
+from agenticrag.api.sse import stream_agent_generator
+from agenticrag.core.config import get_settings
+from agenticrag.core.constants import DATASET_NAME, EMBEDDING_DIM, RETRIEVER_K
+from agenticrag.models.clients import get_retriever, warm_up_clients
+from agenticrag.models.models import ChatRequest, ChatResponse, KBSearchRequest
 
 logger = logging.getLogger(__name__)
 
@@ -226,7 +226,7 @@ def root():
 @app.get("/health")
 def health_check():
     """Health status probe for monitoring and load balancers."""
-    from agenticrag.metrics import get_provider_metrics
+    from agenticrag.telemetry.metrics import get_provider_metrics
 
     metrics = get_provider_metrics()
     retriever_instance = get_retriever()
@@ -242,8 +242,8 @@ def health_check():
 @limiter.limit("30/minute")
 def detailed_health_check(request: Request, _auth: str | None = Depends(verify_api_key)):
     """Protected health and observability probe exposing per-provider telemetry and recent execution spans."""
-    from agenticrag.metrics import get_provider_metrics
-    from agenticrag.telemetry import get_telemetry_collector
+    from agenticrag.telemetry.metrics import get_provider_metrics
+    from agenticrag.telemetry.telemetry import get_telemetry_collector
 
     metrics = get_provider_metrics()
     telemetry = get_telemetry_collector().get_summary()
@@ -321,7 +321,7 @@ async def chat_endpoint(
         thread_id=thread_id, tenant_id=user.tenant_id, user_id=user.user_id
     )
 
-    from agenticrag.cache import get_response_cache
+    from agenticrag.retrieval.cache import get_response_cache
 
     agent_app = get_current_agent()
     config = {"configurable": {"thread_id": thread_id}}
@@ -337,7 +337,7 @@ async def chat_endpoint(
             "[State Inspection] Unable to retrieve state for thread %s: %s", thread_id, state_err
         )
 
-    from agenticrag.security import (
+    from agenticrag.security.security import (
         filter_canary_and_leaks,
         redact_pii_with_mapping,
         restore_pii_mapping,

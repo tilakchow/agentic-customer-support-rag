@@ -35,7 +35,7 @@ def main() -> None:
     elif args.command == "ingest":
         logging.basicConfig(level=logging.INFO)
         try:
-            from agenticrag.ingest import run_ingestion
+            from agenticrag.retrieval.ingest import run_ingestion
         except ImportError as e:
             if "datasets" in str(e):
                 print(

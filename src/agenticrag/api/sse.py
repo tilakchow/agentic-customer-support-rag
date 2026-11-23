@@ -7,7 +7,7 @@ from typing import Any
 from langchain_core.messages import HumanMessage
 from starlette.requests import Request
 
-from agenticrag.node_meta import (
+from agenticrag.agent.node_meta import (
     NodeName,
     get_node_status_message,
     is_generation_node,
@@ -35,7 +35,7 @@ async def stream_agent_generator(
             "Pass app.state.agent_app from the FastAPI lifespan."
         )
 
-    from agenticrag.security import filter_canary_and_leaks, redact_pii_with_mapping
+    from agenticrag.security.security import filter_canary_and_leaks, redact_pii_with_mapping
 
     sanitized_message, pii_mapping = redact_pii_with_mapping(message)
 

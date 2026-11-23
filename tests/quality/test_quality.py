@@ -13,9 +13,9 @@ import pytest
 from deepeval.metrics import AnswerRelevancyMetric, FaithfulnessMetric
 from deepeval.test_case import LLMTestCase
 
-from agenticrag.graph import create_agent
+from agenticrag.agent.graph import create_agent
 
-GOLDEN_PATH = Path("evals/golden.jsonl")
+GOLDEN_PATH = Path("evals/datasets/golden.jsonl")
 
 
 def load_in_kb_dev_cases() -> list[dict]:

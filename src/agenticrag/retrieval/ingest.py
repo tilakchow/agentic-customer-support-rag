@@ -15,10 +15,10 @@ from langchain_pinecone import PineconeVectorStore
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from pinecone import Pinecone, ServerlessSpec
 
-from agenticrag.cache import get_response_cache
-from agenticrag.clients import get_embeddings
-from agenticrag.config import get_settings
-from agenticrag.constants import DATASET_NAME, EMBEDDING_DIM
+from agenticrag.core.config import get_settings
+from agenticrag.core.constants import DATASET_NAME, EMBEDDING_DIM
+from agenticrag.models.clients import get_embeddings
+from agenticrag.retrieval.cache import get_response_cache
 
 logger = logging.getLogger(__name__)
 

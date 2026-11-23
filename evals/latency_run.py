@@ -1,6 +1,6 @@
 """Measures end-to-end graph latency (p50, p95) and token counts across execution paths (kb, web, direct).
 
-Writes measured results to evals/latency.json.
+Writes measured results to evals/reports/latency.json.
 """
 
 import argparse
@@ -16,8 +16,8 @@ from typing import Any
 
 from langchain_core.messages import HumanMessage
 
-from agenticrag.config import get_settings
-from agenticrag.graph import create_agent
+from agenticrag.agent.graph import create_agent
+from agenticrag.core.config import get_settings
 
 logging.basicConfig(level=logging.WARNING)
 logger = logging.getLogger("evals.latency_run")
@@ -65,7 +65,7 @@ def extract_tokens(messages: list[Any]) -> dict[str, int]:
 
 
 async def run_latency_benchmark(
-    n_per_path: int = 5, output_file: str = "evals/latency.json"
+    n_per_path: int = 5, output_file: str = "evals/reports/latency.json"
 ) -> dict[str, Any]:
     settings = get_settings()
 
@@ -212,7 +212,7 @@ async def run_latency_benchmark(
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run real graph latency benchmarks.")
     parser.add_argument("--n-per-path", type=int, default=5, help="Number of queries per path")
-    parser.add_argument("--output", default="evals/latency.json", help="Output JSON path")
+    parser.add_argument("--output", default="evals/reports/latency.json", help="Output JSON path")
     args = parser.parse_args()
 
     asyncio.run(run_latency_benchmark(n_per_path=args.n_per_path, output_file=args.output))

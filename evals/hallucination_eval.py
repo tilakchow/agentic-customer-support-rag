@@ -1,6 +1,6 @@
 """Evaluation script for Milestone T3 cheap faithfulness pre-check vs LLM check.
 
-Runs cases from evals/hallucination_cases.jsonl, evaluating cheap entity pre-check
+Runs cases from evals/datasets/hallucination_cases.jsonl, evaluating cheap entity pre-check
 against LLM check_claim_support. Reports precision, recall, and token savings.
 """
 
@@ -9,7 +9,7 @@ import asyncio
 import json
 import logging
 
-from agenticrag.nodes import cheap_faithfulness_precheck, check_claim_support
+from agenticrag.agent.nodes import cheap_faithfulness_precheck, check_claim_support
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -144,7 +144,9 @@ async def run_evaluation(dataset_path: str, delay: float = 1.0, limit: int | Non
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--dataset", default="evals/hallucination_cases.jsonl", help="Dataset path")
+    parser.add_argument(
+        "--dataset", default="evals/datasets/hallucination_cases.jsonl", help="Dataset path"
+    )
     parser.add_argument("--delay", type=float, default=1.2, help="Pacing delay between LLM calls")
     parser.add_argument("--limit", type=int, default=None, help="Limit number of cases")
     args = parser.parse_args()

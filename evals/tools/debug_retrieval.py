@@ -1,5 +1,5 @@
-from agenticrag.clients import get_embeddings, get_vectorstore
-from agenticrag.config import get_settings
+from agenticrag.core.config import get_settings
+from agenticrag.models.clients import get_embeddings, get_vectorstore
 
 s = get_settings()
 print(

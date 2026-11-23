@@ -114,7 +114,7 @@ Measured against automated evaluation harnesses on the Bitext customer support b
 <details>
 <summary><b>View Token Optimization Breakdown (Before vs. After)</b></summary>
 
-Measured on a 40-query stratified sample (`evals/tokens.json`). Optimizations include role-specific reasoning caps, classifier history truncation, entity pre-checks, and prompt compression:
+Measured on a 40-query stratified sample (`evals/reports/tokens.json`). Optimizations include role-specific reasoning caps, classifier history truncation, entity pre-checks, and prompt compression:
 
 | Execution Path | Baseline Tokens (Mean) | Baseline Calls | Optimized Tokens (Mean) | Optimized Calls | Token Delta |
 | :--- | :---: | :---: | :---: | :---: | :---: |
@@ -218,22 +218,22 @@ Visit [http://localhost:5173](http://localhost:5173) to interact with the web in
 ```text
 agentic-customer-support-rag/
 ├── src/agenticrag/          # Core backend package
-│   ├── api.py               # FastAPI endpoints (/chat, /chat/stream, /health)
-│   ├── auth.py              # JWT authentication & thread-to-user tenancy manager
-│   ├── cache.py             # Exact-match response cache & LRU store
-│   ├── config.py            # Pydantic v2 application settings & policies
-│   ├── graph.py             # LangGraph state machine & conditional edge definitions
-│   ├── nodes.py             # Graph node handlers (scope, condense, grade, generate)
-│   ├── redaction.py         # Regex PII detection and masking engine
-│   ├── retrieval.py         # Vector similarity search & BGE neural cross-encoder
-│   ├── routing.py           # Scope classification, prompt injection & escalation logic
-│   └── tools.py             # Deterministic order status & support ticket tools
-├── evals/                   # Evaluation harnesses & definitive scoreboard
+│   ├── agent/               # LangGraph state machine, nodes, routing & state
+│   ├── api/                 # FastAPI routes, auth & SSE streaming
+│   ├── core/                # Configuration, schemas & constants
+│   ├── models/              # LLM clients, vector store & embedding clients
+│   ├── prompts/             # System prompts & context sanitizers
+│   ├── retrieval/           # Vector retrieval, reranking, cache & ingestion
+│   ├── security/            # PII redaction, canary tokens & injection guards
+│   ├── telemetry/           # OpenTelemetry spans & health metrics
+│   ├── tools/               # Deterministic order status & support ticket tools
+│   └── cli.py               # Application CLI entrypoint (serve, ingest)
+├── evals/                   # Evaluation harnesses & benchmarks
+│   ├── datasets/            # Curated golden & adversarial evaluation sets
+│   ├── reports/             # Empirical benchmark outputs & scoreboard baselines
+│   ├── tools/               # Diagnostic evaluation utilities
 │   ├── SCOREBOARD.md        # Metric tracker with confidence intervals
-│   ├── retrieval_eval.py    # Recall@4, Precision@4, MRR sweeps
-│   ├── adversarial_eval.py  # 52 prompt injection and jailbreak attack tests
-│   ├── hallucination_eval.py # Grounding entity pre-check & hallucination benchmark
-│   └── answer_quality_eval.py # LLM-as-a-judge groundedness, tone, and correctness
+│   └── *.py                 # Benchmark runners (retrieval, latency, quality, etc.)
 ├── frontend/                # React 19 single-page application
 └── tests/                   # 241 automated pytest unit and integration tests
 ```

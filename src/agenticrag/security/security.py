@@ -217,7 +217,7 @@ class LLMInjectionDecision(BaseModel):
 async def check_llm_injection(text: str) -> tuple[bool, str]:
     """Second-layer LLM-based injection check for suspicious inputs using structured output."""
     try:
-        from agenticrag.clients import get_llm
+        from agenticrag.models.clients import get_llm
 
         prompt = (
             "You are a security evaluator for a customer support AI. "

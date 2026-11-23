@@ -17,7 +17,7 @@ from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from typing import Any
 
-from agenticrag.config import get_settings
+from agenticrag.core.config import get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -166,7 +166,7 @@ class TelemetryCollector:
         try:
             from opentelemetry import trace  # type: ignore[import-untyped]
 
-            tracer = trace.get_tracer("agenticrag.telemetry")
+            tracer = trace.get_tracer("agenticrag.telemetry.telemetry")
             with tracer.start_as_current_span(
                 f"agenticrag.{span.node_name}",
                 attributes={

@@ -3,8 +3,8 @@
 import pytest
 from langchain_core.messages import HumanMessage
 
-from agenticrag.nodes import plan_tools
-from agenticrag.schemas import ToolCallRequest, ToolPlan
+from agenticrag.agent.nodes import plan_tools
+from agenticrag.core.schemas import ToolCallRequest, ToolPlan
 from agenticrag.tools import create_support_ticket, get_order_status, reset_tools_db
 
 

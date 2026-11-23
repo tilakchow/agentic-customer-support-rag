@@ -2,7 +2,7 @@
 
 import pytest
 
-from agenticrag.config import Settings
+from agenticrag.core.config import Settings
 
 
 def test_settings_defaults():
@@ -108,7 +108,7 @@ def test_settings_validate_runtime_keys_warns_when_missing(caplog):
     import logging
 
     s = Settings(groq_api_key="", tavily_api_key="", pinecone_api_key="")
-    with caplog.at_level(logging.WARNING, logger="agenticrag.config"):
+    with caplog.at_level(logging.WARNING, logger="agenticrag.core.config"):
         s.validate_runtime_keys(strict=False)
     assert any(
         "Missing required environment variables" in record.message for record in caplog.records

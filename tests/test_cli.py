@@ -59,7 +59,7 @@ def test_cli_ingest_invokes_run_ingestion():
     """Test that ingest subcommand calls run_ingestion."""
     with (
         patch("sys.argv", ["agenticrag", "ingest"]),
-        patch("agenticrag.ingest.run_ingestion") as mock_run_ingest,
+        patch("agenticrag.retrieval.ingest.run_ingestion") as mock_run_ingest,
     ):
         main()
         mock_run_ingest.assert_called_once()
@@ -72,7 +72,7 @@ def test_cli_ingest_missing_datasets_handles_gracefully(capsys):
     orig_import = builtins.__import__
 
     def fake_import(name, *args, **kwargs):
-        if name == "agenticrag.ingest":
+        if name == "agenticrag.retrieval.ingest":
             raise ImportError("No module named 'datasets'")
         return orig_import(name, *args, **kwargs)
 

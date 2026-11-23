@@ -4,13 +4,13 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from agenticrag.config import Settings
-from agenticrag.ingest import run_ingestion
+from agenticrag.core.config import Settings
+from agenticrag.retrieval.ingest import run_ingestion
 
 
 def test_ingest_fails_without_pinecone_api_key(monkeypatch):
     """Ingestion fails fast if PINECONE_API_KEY is not configured."""
-    import agenticrag.ingest as ingest_module
+    import agenticrag.retrieval.ingest as ingest_module
 
     no_key_settings = Settings(pinecone_api_key="")
     monkeypatch.setattr(ingest_module, "get_settings", lambda: no_key_settings)
@@ -21,7 +21,7 @@ def test_ingest_fails_without_pinecone_api_key(monkeypatch):
 
 def test_ingest_success_creates_index_if_missing(monkeypatch):
     """Ingestion pipeline loads dataset, chunks documents, creates index if absent, and upserts."""
-    import agenticrag.ingest as ingest_module
+    import agenticrag.retrieval.ingest as ingest_module
 
     settings = Settings(
         pinecone_api_key="mock-pinecone-key",
@@ -59,9 +59,9 @@ def test_ingest_success_creates_index_if_missing(monkeypatch):
 
     with (
         patch("datasets.load_dataset", return_value=mock_dataset),
-        patch("agenticrag.ingest.Pinecone", return_value=mock_pc),
-        patch("agenticrag.ingest.get_embeddings") as mock_get_embeddings,
-        patch("agenticrag.ingest.PineconeVectorStore.from_documents") as mock_from_docs,
+        patch("agenticrag.retrieval.ingest.Pinecone", return_value=mock_pc),
+        patch("agenticrag.retrieval.ingest.get_embeddings") as mock_get_embeddings,
+        patch("agenticrag.retrieval.ingest.PineconeVectorStore.from_documents") as mock_from_docs,
     ):
         mock_get_embeddings.return_value = MagicMock()
         run_ingestion()
@@ -84,7 +84,7 @@ def test_ingest_success_creates_index_if_missing(monkeypatch):
 
 def test_ingest_success_skips_create_if_index_exists(monkeypatch):
     """Ingestion pipeline does not call create_index when index is already listed."""
-    import agenticrag.ingest as ingest_module
+    import agenticrag.retrieval.ingest as ingest_module
 
     settings = Settings(
         pinecone_api_key="mock-pinecone-key",
@@ -111,9 +111,9 @@ def test_ingest_success_skips_create_if_index_exists(monkeypatch):
 
     with (
         patch("datasets.load_dataset", return_value=mock_dataset),
-        patch("agenticrag.ingest.Pinecone", return_value=mock_pc),
-        patch("agenticrag.ingest.get_embeddings"),
-        patch("agenticrag.ingest.PineconeVectorStore.from_documents"),
+        patch("agenticrag.retrieval.ingest.Pinecone", return_value=mock_pc),
+        patch("agenticrag.retrieval.ingest.get_embeddings"),
+        patch("agenticrag.retrieval.ingest.PineconeVectorStore.from_documents"),
     ):
         run_ingestion()
         mock_pc.create_index.assert_not_called()

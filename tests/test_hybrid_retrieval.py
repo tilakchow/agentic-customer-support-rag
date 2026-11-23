@@ -2,8 +2,8 @@
 
 from langchain_core.documents import Document
 
-from agenticrag.config import get_settings
-from agenticrag.retrieval import reciprocal_rank_fusion
+from agenticrag.core.config import get_settings
+from agenticrag.retrieval.retrieval import reciprocal_rank_fusion
 
 
 def test_hybrid_retrieval_setting_default_false():

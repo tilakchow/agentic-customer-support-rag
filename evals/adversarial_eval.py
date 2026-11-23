@@ -9,7 +9,7 @@ import math
 import os
 from typing import Any
 
-from agenticrag.security import CANARY_TOKEN, is_prompt_injection
+from agenticrag.security.security import CANARY_TOKEN, is_prompt_injection
 
 
 def wilson_score_interval(
@@ -30,7 +30,7 @@ def wilson_score_interval(
 
 def run_adversarial_eval() -> dict[str, Any]:
     """Runs injection defense evaluation on golden_other.jsonl dev split."""
-    golden_other_path = os.path.join(os.path.dirname(__file__), "golden_other.jsonl")
+    golden_other_path = os.path.join(os.path.dirname(__file__), "datasets", "golden_other.jsonl")
     if not os.path.exists(golden_other_path):
         raise FileNotFoundError(f"Missing {golden_other_path}")
 

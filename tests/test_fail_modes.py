@@ -5,17 +5,17 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from langchain_core.messages import HumanMessage
 
-import agenticrag.nodes as nodes_module
-from agenticrag.config import Settings
-from agenticrag.nodes import (
+import agenticrag.agent.nodes as nodes_module
+from agenticrag.agent.nodes import (
     check_claim_support,
     classify_scope,
     grade_kb_evidence,
     grade_web_evidence,
     route_question,
 )
-from agenticrag.routing import route_after_scope
-from agenticrag.telemetry import get_telemetry_collector
+from agenticrag.agent.routing import route_after_scope
+from agenticrag.core.config import Settings
+from agenticrag.telemetry.telemetry import get_telemetry_collector
 
 
 @pytest.fixture(autouse=True)
@@ -31,7 +31,7 @@ async def test_scope_classifier_fail_closed_and_open(monkeypatch):
     """Scope classifier defaults to fail-closed on provider error, routing to answer_insufficient."""
     collector = get_telemetry_collector()
 
-    with patch("agenticrag.nodes.get_classifier_llm") as mock_llm:
+    with patch("agenticrag.agent.nodes.get_classifier_llm") as mock_llm:
         mock_llm.return_value.ainvoke = AsyncMock(side_effect=TimeoutError("Groq timeout"))
 
         # 1. Closed mode (default)
@@ -67,7 +67,7 @@ async def test_router_fail_open_and_closed(monkeypatch):
     """Router defaults to fail-open (route='kb') and falls back to 'direct' when closed."""
     collector = get_telemetry_collector()
 
-    with patch("agenticrag.nodes.get_router_llm") as mock_llm:
+    with patch("agenticrag.agent.nodes.get_router_llm") as mock_llm:
         mock_llm.return_value.ainvoke = AsyncMock(side_effect=RuntimeError("Groq 429"))
 
         # 1. Open mode (default)
@@ -96,7 +96,7 @@ async def test_grader_fail_closed_and_open(monkeypatch):
 
     docs = [Document(page_content="Store returns accepted within 30 days.")]
 
-    with patch("agenticrag.nodes.get_grader_llm") as mock_llm:
+    with patch("agenticrag.agent.nodes.get_grader_llm") as mock_llm:
         mock_llm.return_value.ainvoke = AsyncMock(side_effect=ConnectionError("Network error"))
 
         # 1. Closed mode (default)
@@ -131,7 +131,7 @@ async def test_faithfulness_adaptive_fail_mode(monkeypatch):
     """Faithfulness defaults to adaptive: fail-closed for policy/billing, fail-open otherwise."""
     collector = get_telemetry_collector()
 
-    with patch("agenticrag.nodes.get_faithfulness_llm") as mock_llm:
+    with patch("agenticrag.agent.nodes.get_faithfulness_llm") as mock_llm:
         mock_llm.return_value.ainvoke = AsyncMock(side_effect=RuntimeError("Evaluator failure"))
 
         adaptive_settings = Settings(fail_mode_faithfulness="adaptive")

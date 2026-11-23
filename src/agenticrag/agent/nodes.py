@@ -10,8 +10,20 @@ from typing import Any
 from langchain_core.documents import Document
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
-from agenticrag.auth import get_tenant_namespace
-from agenticrag.clients import (
+from agenticrag.agent.routing import (
+    get_conversation_history,
+    get_latest_question,
+    get_truncated_conversation_history,
+    is_human_escalation_request,
+    is_policy_sensitive_request,
+    is_proprietary_policy_query,
+)
+from agenticrag.agent.state import AgentState
+from agenticrag.api.auth import get_tenant_namespace
+from agenticrag.core.config import get_settings
+from agenticrag.core.constants import RETRIEVER_K
+from agenticrag.core.schemas import ClaimSupportCheck, ScopeDecision, ToolCallRequest, ToolPlan
+from agenticrag.models.clients import (
     get_classifier_llm,
     get_faithfulness_llm,
     get_grader_llm,
@@ -21,10 +33,7 @@ from agenticrag.clients import (
     get_vectorstore,
     get_web_search,
 )
-from agenticrag.config import get_settings
-from agenticrag.constants import RETRIEVER_K
-from agenticrag.metrics import record_provider_failure
-from agenticrag.prompts import (
+from agenticrag.prompts.prompts import (
     CLAIM_SUPPORT_PROMPT_TEMPLATE,
     CONDENSE_QUERY_PROMPT_TEMPLATE,
     CUSTOMER_SUPPORT_SYSTEM_PROMPT,
@@ -46,25 +55,16 @@ from agenticrag.prompts import (
     WEB_GRADER_SYSTEM_PROMPT,
     sanitize_untrusted_context,
 )
-from agenticrag.retrieval import retrieve_kb as retrieve_kb_documents
-from agenticrag.routing import (
-    get_conversation_history,
-    get_latest_question,
-    get_truncated_conversation_history,
-    is_human_escalation_request,
-    is_policy_sensitive_request,
-    is_proprietary_policy_query,
-)
-from agenticrag.schemas import ClaimSupportCheck, ScopeDecision, ToolCallRequest, ToolPlan
-from agenticrag.security import (
+from agenticrag.retrieval.retrieval import retrieve_kb as retrieve_kb_documents
+from agenticrag.security.security import (
     check_llm_injection,
     filter_canary_and_leaks,
     is_prompt_injection,
     is_suspicious_for_injection,
     redact_pii,
 )
-from agenticrag.state import AgentState
-from agenticrag.telemetry import get_telemetry_collector, traced_node
+from agenticrag.telemetry.metrics import record_provider_failure
+from agenticrag.telemetry.telemetry import get_telemetry_collector, traced_node
 from agenticrag.tools import create_support_ticket, get_order_status
 
 logger = logging.getLogger(__name__)

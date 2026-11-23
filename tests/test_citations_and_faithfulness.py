@@ -7,9 +7,9 @@ from fastapi.testclient import TestClient
 from langchain_core.documents import Document
 from langchain_core.messages import AIMessage, HumanMessage
 
-from agenticrag.api import app
-from agenticrag.nodes import check_claim_support, generate_from_kb
-from agenticrag.schemas import ClaimSupportCheck
+from agenticrag.agent.nodes import check_claim_support, generate_from_kb
+from agenticrag.api.routes import app
+from agenticrag.core.schemas import ClaimSupportCheck
 
 
 @pytest.fixture
@@ -40,7 +40,7 @@ def test_claim_support_schema():
 @pytest.mark.asyncio
 async def test_check_claim_support_grounded():
     """Validates check_claim_support returns supported=True for grounded answers."""
-    with patch("agenticrag.nodes.get_faithfulness_llm") as mock_faith:
+    with patch("agenticrag.agent.nodes.get_faithfulness_llm") as mock_faith:
         mock_faith.return_value.ainvoke = AsyncMock(
             return_value=ClaimSupportCheck(supported=True, reason="Grounded in context")
         )
@@ -56,7 +56,7 @@ async def test_check_claim_support_grounded():
 @pytest.mark.asyncio
 async def test_check_claim_support_hallucination_flagged():
     """Validates check_claim_support flags hallucinated claims."""
-    with patch("agenticrag.nodes.get_faithfulness_llm") as mock_faith:
+    with patch("agenticrag.agent.nodes.get_faithfulness_llm") as mock_faith:
         mock_faith.return_value.ainvoke = AsyncMock(
             return_value=ClaimSupportCheck(
                 supported=False,
@@ -93,8 +93,8 @@ async def test_generate_from_kb_annotates_sources_and_faithfulness():
     }
 
     with (
-        patch("agenticrag.nodes.get_llm") as mock_llm,
-        patch("agenticrag.nodes.get_faithfulness_llm") as mock_faith,
+        patch("agenticrag.agent.nodes.get_llm") as mock_llm,
+        patch("agenticrag.agent.nodes.get_faithfulness_llm") as mock_faith,
     ):
         mock_llm.return_value.ainvoke = AsyncMock(
             return_value=AIMessage(content="Refunds are processed within 3 to 5 business days.")
@@ -126,8 +126,8 @@ async def test_generate_from_kb_regenerates_on_unsupported_claim_and_succeeds():
     }
 
     with (
-        patch("agenticrag.nodes.get_llm") as mock_llm,
-        patch("agenticrag.nodes.get_faithfulness_llm") as mock_faith,
+        patch("agenticrag.agent.nodes.get_llm") as mock_llm,
+        patch("agenticrag.agent.nodes.get_faithfulness_llm") as mock_faith,
     ):
         # First generation produces hallucination; second generation (regen) is grounded
         mock_llm.return_value.ainvoke = AsyncMock(
@@ -174,8 +174,8 @@ async def test_generate_from_kb_regeneration_still_unsupported_escalates():
     }
 
     with (
-        patch("agenticrag.nodes.get_llm") as mock_llm,
-        patch("agenticrag.nodes.get_faithfulness_llm") as mock_faith,
+        patch("agenticrag.agent.nodes.get_llm") as mock_llm,
+        patch("agenticrag.agent.nodes.get_faithfulness_llm") as mock_faith,
     ):
         mock_llm.return_value.ainvoke = AsyncMock(
             side_effect=[
@@ -204,10 +204,10 @@ async def test_generate_from_kb_regeneration_still_unsupported_escalates():
 
 def test_configurable_faithfulness_model():
     """Verifies that FAITHFULNESS_MODEL is configurable via Settings."""
-    from agenticrag.clients import get_faithfulness_llm
-    from agenticrag.config import Settings
+    from agenticrag.core.config import Settings
+    from agenticrag.models.clients import get_faithfulness_llm
 
-    with patch("agenticrag.clients.get_settings") as mock_settings:
+    with patch("agenticrag.models.clients.get_settings") as mock_settings:
         mock_settings.return_value = Settings(
             faithfulness_model="groq/llama-3.3-70b-versatile",
             groq_api_key="test-key",
@@ -218,7 +218,7 @@ def test_configurable_faithfulness_model():
 
 def test_chat_response_source_attribution():
     """Validates that ChatResponse includes structured source citations."""
-    from agenticrag.models import ChatResponse
+    from agenticrag.models.models import ChatResponse
 
     resp = ChatResponse(
         response="Your return window is 30 days.",
@@ -258,7 +258,7 @@ def test_faithfulness_benchmark_dataset_distribution_and_wilson_ci():
 
 def test_cheap_faithfulness_precheck():
     """Validates cheap_faithfulness_precheck identifies invented fees, phones, timeframes, and allows grounded entities."""
-    from agenticrag.nodes import cheap_faithfulness_precheck
+    from agenticrag.agent.nodes import cheap_faithfulness_precheck
 
     ctx = "Return window is 30 days. Contact support@company.com or visit https://company.com/help. No cancellation fee applies."
 

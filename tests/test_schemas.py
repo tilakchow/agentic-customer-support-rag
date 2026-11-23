@@ -3,9 +3,9 @@
 import pytest
 from pydantic import ValidationError
 
-from agenticrag.config import Settings
-from agenticrag.models import ChatRequest, ChatResponse, KBSearchRequest
-from agenticrag.schemas import EvidenceGrade, RouteDecision
+from agenticrag.core.config import Settings
+from agenticrag.core.schemas import EvidenceGrade, RouteDecision
+from agenticrag.models.models import ChatRequest, ChatResponse, KBSearchRequest
 
 
 def test_route_decision_defaults():
@@ -54,7 +54,7 @@ def test_chat_request_empty_message():
 
 
 def test_chat_request_too_long(monkeypatch):
-    import agenticrag.models as models_module
+    import agenticrag.models.models as models_module
 
     monkeypatch.setattr(models_module, "get_settings", lambda: Settings(max_message_length=10))
     with pytest.raises(ValidationError, match="Message exceeds maximum allowed length"):

@@ -14,7 +14,7 @@ from typing import Any
 
 from langchain_core.messages import HumanMessage
 
-from agenticrag.nodes import plan_tools
+from agenticrag.agent.nodes import plan_tools
 from agenticrag.tools import create_support_ticket, get_order_status, reset_tools_db
 
 EVAL_CASES: list[dict[str, Any]] = [

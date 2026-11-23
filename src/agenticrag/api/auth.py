@@ -16,7 +16,7 @@ import jwt
 from fastapi import HTTPException, Request, Security, status
 from fastapi.security import APIKeyHeader
 
-from agenticrag.config import get_settings
+from agenticrag.core.config import get_settings
 
 logger = logging.getLogger(__name__)
 

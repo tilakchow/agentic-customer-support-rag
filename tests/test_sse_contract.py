@@ -4,8 +4,8 @@ import json
 
 import pytest
 
-from agenticrag.node_meta import NodeName, get_node_status_message, is_generation_node
-from agenticrag.sse import stream_agent_generator
+from agenticrag.agent.node_meta import NodeName, get_node_status_message, is_generation_node
+from agenticrag.api.sse import stream_agent_generator
 
 
 def test_status_event_contract():
