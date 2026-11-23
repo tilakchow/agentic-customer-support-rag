@@ -174,7 +174,7 @@ uv run uvicorn agenticrag.api:app --host 0.0.0.0 --port 8000 --reload
 uv run --extra ui streamlit run frontend/app.py
 ```
 
-Visit [http://localhost:8501](http://localhost:8501) to interact with the customer support interface. The frontend automatically connects to the backend at `http://localhost:8000` (configurable via `BACKEND_URL`).
+Open `http://localhost:8501` in your browser to interact with the customer support interface. The frontend connects to the backend at `http://localhost:8000` by default (configurable via `BACKEND_URL`).
 
 <details>
 <summary><b>⚙️ Environment Configuration Reference</b></summary>
