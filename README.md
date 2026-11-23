@@ -236,6 +236,16 @@ agentic-customer-support-rag/
 │   └── *.py                 # Benchmark runners (retrieval, latency, quality, etc.)
 ├── frontend/                # React 19 single-page application
 └── tests/                   # 241 automated pytest unit and integration tests
+    ├── agent/               # Workflow execution & routing unit tests
+    ├── api/                 # Endpoint contracts, SSE & tenancy tests
+    ├── core/                # CLI, settings & schema tests
+    ├── models/              # Model factory & client tests
+    ├── quality/             # Grounding, citations & faithfulness tests
+    ├── retrieval/           # BM25, vector search & cache tests
+    ├── security/            # PII redaction & injection guardrail tests
+    ├── telemetry/           # Tracing & provider health metrics tests
+    ├── tools/               # Mock orders & ticketing tool tests
+    └── live/                # Live end-to-end integration tests (-m live)
 ```
 
 ---
