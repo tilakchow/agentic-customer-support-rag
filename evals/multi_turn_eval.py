@@ -8,10 +8,10 @@ from typing import Any
 
 from langchain_core.messages import AIMessage, HumanMessage
 
-from agenticrag.nodes import condense_query
-from agenticrag.retrieval import retrieve_kb
+from agenticrag.agent.nodes import condense_query
+from agenticrag.retrieval.retrieval import retrieve_kb
 
-PATH = sys.argv[1] if len(sys.argv) > 1 else "evals/golden.jsonl"
+PATH = sys.argv[1] if len(sys.argv) > 1 else "evals/datasets/golden.jsonl"
 SPLIT = sys.argv[2] if len(sys.argv) > 2 else "dev"
 
 

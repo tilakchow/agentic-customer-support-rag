@@ -3,7 +3,7 @@
 Measures input, output, and reasoning tokens across graph nodes and execution paths:
 (kb, direct, tool, refuse, escalate, insufficient).
 
-Writes measured results to evals/tokens.json and prints a formatted summary table.
+Writes measured results to evals/reports/tokens.json and prints a formatted summary table.
 """
 
 import argparse
@@ -21,8 +21,8 @@ from typing import Any
 from langchain_core.callbacks import BaseCallbackHandler
 from langchain_core.messages import HumanMessage
 
-from agenticrag.config import get_settings
-from agenticrag.graph import create_agent
+from agenticrag.agent.graph import create_agent
+from agenticrag.core.config import get_settings
 
 logging.basicConfig(level=logging.WARNING)
 logger = logging.getLogger("evals.token_report")
@@ -158,7 +158,7 @@ def build_stratified_dataset(limit: int = 40, seed: int = 42) -> list[dict[str, 
 
     # 1. KB Cases (from in-KB dev set)
     kb_pool: list[dict[str, Any]] = []
-    golden_path = os.path.join(os.path.dirname(__file__), "golden.jsonl")
+    golden_path = os.path.join(os.path.dirname(__file__), "datasets", "golden.jsonl")
     if os.path.exists(golden_path):
         with open(golden_path, encoding="utf-8") as f:
             for line in f:
@@ -412,7 +412,7 @@ def build_stratified_dataset(limit: int = 40, seed: int = 42) -> list[dict[str, 
 async def run_token_benchmark(
     limit: int = 40,
     seed: int = 42,
-    output_file: str = "evals/tokens.json",
+    output_file: str = "evals/reports/tokens.json",
     query_delay: float = 1.0,
 ) -> dict[str, Any]:
     settings = get_settings()
@@ -597,7 +597,7 @@ async def run_token_benchmark(
 
     # Print Formatted Markdown Table
     print("\n" + "=" * 90)
-    print("TOKEN & CALL BENCHMARK TABLE ACROSS PATHS (evals/tokens.json)")
+    print("TOKEN & CALL BENCHMARK TABLE ACROSS PATHS (evals/reports/tokens.json)")
     print("=" * 90)
     print(
         f"{'Path':<14} | {'n':<4} | {'LLM Calls (mean/p95)':<20} | {'Input Tok (mean/p95)':<20} | {'Output Tok (mean/p95)':<21} | {'Reasoning (mean/p95)'}"
@@ -647,7 +647,7 @@ def main() -> None:
     )
     parser.add_argument("--limit", type=int, default=40, help="Number of queries to sample")
     parser.add_argument("--seed", type=int, default=42, help="Random seed for sampling")
-    parser.add_argument("--output", default="evals/tokens.json", help="Output JSON path")
+    parser.add_argument("--output", default="evals/reports/tokens.json", help="Output JSON path")
     parser.add_argument(
         "--delay",
         type=float,

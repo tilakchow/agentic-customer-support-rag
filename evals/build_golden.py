@@ -6,8 +6,8 @@ import random
 
 from datasets import load_dataset
 
-from agenticrag.config import get_settings
-from agenticrag.constants import DATASET_NAME
+from agenticrag.core.config import get_settings
+from agenticrag.core.constants import DATASET_NAME
 
 N_TOTAL = 100  # in-KB cases (about 60% of a 170-case set)
 random.seed(42)
@@ -39,7 +39,7 @@ random.shuffle(rows)
 for j, r in enumerate(rows):
     r["split"] = "test" if j % 10 >= 7 else "dev"
 
-with open("evals/golden_in_kb.jsonl", "w") as f:
+with open("evals/datasets/golden_in_kb.jsonl", "w") as f:
     for r in rows:
         f.write(json.dumps(r) + "\n")
 print(f"{len(rows)} cases, {len(kb_intents)} intents in KB")

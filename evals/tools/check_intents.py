@@ -1,14 +1,14 @@
 import json
 
-from agenticrag.clients import get_vectorstore
-from agenticrag.config import get_settings
+from agenticrag.core.config import get_settings
+from agenticrag.models.clients import get_vectorstore
 
 s = get_settings()
 vs = get_vectorstore()
 intents = sorted(
     {
         json.loads(line)["expected_intent"]
-        for line in open("evals/golden.jsonl", encoding="utf-8-sig")
+        for line in open("evals/datasets/golden.jsonl", encoding="utf-8-sig")
         if line.strip() and ('"expected_intent": "' in line or '"expected_intent":"' in line)
     }
 )

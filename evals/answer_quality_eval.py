@@ -18,8 +18,8 @@ from typing import Any
 from langchain_core.messages import HumanMessage
 from pydantic import AliasChoices, BaseModel, Field
 
-from agenticrag.clients import get_llm
-from agenticrag.graph import create_agent
+from agenticrag.agent.graph import create_agent
+from agenticrag.models.clients import get_llm
 
 logger = logging.getLogger(__name__)
 
@@ -136,7 +136,7 @@ async def evaluate_single(
 
 
 async def run_quality_eval(
-    dataset_path: str = "evals/golden_realistic.jsonl",
+    dataset_path: str = "evals/datasets/golden_realistic.jsonl",
     sample_size: int | None = None,
     judge_model: str | None = None,
     delay: float = 1.0,
@@ -200,7 +200,9 @@ async def run_quality_eval(
 def main():
     parser = argparse.ArgumentParser(description="Evaluate answer quality with LLM judge.")
     parser.add_argument(
-        "--dataset", default="evals/golden_realistic.jsonl", help="Path to evaluation dataset"
+        "--dataset",
+        default="evals/datasets/golden_realistic.jsonl",
+        help="Path to evaluation dataset",
     )
     parser.add_argument(
         "--sample",

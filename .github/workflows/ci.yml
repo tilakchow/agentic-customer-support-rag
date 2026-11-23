@@ -43,38 +43,30 @@ jobs:
       - name: Run pip-audit Dependency Vulnerability Scan
         run: uv run pip-audit
 
-  frontend-build:
+  frontend-test:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: ./frontend
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
         with:
-          node-version: '22'
-          cache: 'npm'
-          cache-dependency-path: './frontend/package-lock.json'
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
 
-      - name: Install dependencies
-        run: npm ci
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version-file: ".python-version"
 
-      - name: Run Oxlint
-        run: npm run lint
+      - name: Install dependencies with UI extra
+        run: uv sync --frozen --extra ui
 
-      - name: Run TypeScript Type Check
-        run: npx tsc -b
+      - name: Run Ruff Check Frontend
+        run: uv run ruff check frontend/ tests/frontend/
 
-      - name: Run Vitest Suite
-        run: npm test
-
-      - name: Build Frontend Bundle
-        run: npm run build
-
-      - name: Run npm Audit
-        run: npm audit --audit-level=moderate
+      - name: Run Pytest Frontend
+        run: uv run pytest tests/frontend/ -v
 
   docker-build:
     runs-on: ubuntu-latest
@@ -96,7 +88,7 @@ jobs:
 
   # Live evaluation gate disabled to avoid burning LLM tokens and API quotas on CI.
   # Run evaluations locally on-demand with:
-  #   uv run python evals/retrieval_eval.py evals/golden.jsonl dev 0.75
+  #   uv run python evals/retrieval_eval.py evals/datasets/golden.jsonl dev 0.75
   #   uv run pytest tests/quality -m live
   #
   # evals:
@@ -133,8 +125,8 @@ jobs:
   #         PINECONE_API_KEY: ${{ secrets.PINECONE_API_KEY }}
   #         GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
   #       run: |
-  #         THRESH=$(python3 -c "import json; b = json.load(open('evals/baseline.json')); print(round(b['recall@4']['mean'] - 0.05, 3))")
-  #         uv run python evals/retrieval_eval.py evals/golden.jsonl dev "$THRESH"
+  #         THRESH=$(python3 -c "import json; b = json.load(open('evals/reports/baseline.json')); print(round(b['recall@4']['mean'] - 0.05, 3))")
+  #         uv run python evals/retrieval_eval.py evals/datasets/golden.jsonl dev "$THRESH"
   #     - name: Run Quality Evals
   #       if: steps.check-secrets.outputs.has_secrets == 'true'
   #       env:

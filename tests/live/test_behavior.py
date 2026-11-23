@@ -10,13 +10,13 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from agenticrag.api import app
+from agenticrag.api.routes import app
 
-GOLDEN_PATH = Path("evals/golden.jsonl")
+GOLDEN_PATH = Path("evals/datasets/golden.jsonl")
 
 
 def load_live_cases() -> list[dict]:
-    """Loads golden cases from evals/golden.jsonl using utf-8-sig."""
+    """Loads golden cases from evals/datasets/golden.jsonl using utf-8-sig."""
     if not GOLDEN_PATH.exists():
         return []
     with open(GOLDEN_PATH, encoding="utf-8-sig") as f:
@@ -33,7 +33,7 @@ BEHAVIOR_CASES = [
 
 @pytest.fixture
 def client() -> Generator[TestClient, None, None]:
-    from agenticrag.api import limiter
+    from agenticrag.api.routes import limiter
 
     prev = limiter.enabled
     limiter.enabled = False

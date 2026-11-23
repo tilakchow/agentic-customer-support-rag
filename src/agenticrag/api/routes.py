@@ -1,0 +1,485 @@
+import asyncio
+import hmac
+import logging
+import re
+import uuid
+from contextlib import asynccontextmanager
+from typing import Any
+
+from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi.responses import StreamingResponse
+from langchain_core.messages import AIMessage, HumanMessage
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from starlette.middleware.cors import CORSMiddleware
+
+from agenticrag.agent.graph import create_agent
+from agenticrag.api.auth import (
+    AuthenticatedUser,
+    get_authenticated_user,
+    get_tenancy_manager,
+    get_tenant_namespace,
+    verify_api_key,
+)
+from agenticrag.api.sse import stream_agent_generator
+from agenticrag.core.config import get_settings
+from agenticrag.core.constants import DATASET_NAME, EMBEDDING_DIM, RETRIEVER_K
+from agenticrag.models.clients import get_retriever, warm_up_clients
+from agenticrag.models.models import ChatRequest, ChatResponse, KBSearchRequest
+
+logger = logging.getLogger(__name__)
+
+
+def get_client_ip(request: Request) -> str:
+    """Extracts client IP safely considering configured trusted proxies.
+
+    If request.client.host is in TRUSTED_PROXIES, inspects X-Forwarded-For and
+    takes the rightmost untrusted IP in the chain (preventing client spoofing).
+    Otherwise, trusts only the direct socket client IP.
+    """
+    direct_ip = request.client.host if request.client else "127.0.0.1"
+    settings = get_settings()
+    trusted = set(settings.trusted_proxies)
+
+    if direct_ip in trusted:
+        xfwd = request.headers.get("x-forwarded-for")
+        if xfwd:
+            ips = [ip.strip() for ip in xfwd.split(",") if ip.strip()]
+            for ip in reversed(ips):
+                if ip not in trusted:
+                    return ip
+            if ips:
+                return ips[0]
+
+    return direct_ip
+
+
+def get_client_rate_limit_key(request: Request) -> str:
+    """Extracts rate limit identifier: verified API key scoped per client IP to prevent global exhaustion."""
+    client_ip = get_client_ip(request)
+    api_key = request.headers.get("X-API-Key")
+    configured_key = get_settings().api_key
+    # Only assign a dedicated API key rate bucket if the key is genuine and matches configured secret,
+    # scoped by client IP so that all users behind edge proxies don't share a single 20/min bucket.
+    if (
+        api_key
+        and configured_key
+        and hmac.compare_digest(api_key.encode("utf-8"), configured_key.encode("utf-8"))
+    ):
+        return f"{client_ip}:key:{api_key.strip()}"
+
+    return client_ip
+
+
+# Initialize rate limiter with proxy-aware key tracking and optional Redis storage backend
+settings = get_settings()
+limiter = (
+    Limiter(key_func=get_client_rate_limit_key, storage_uri=settings.redis_url)
+    if settings.redis_url
+    else Limiter(key_func=get_client_rate_limit_key)
+)
+
+
+# --- Application Lifespan Handler ---
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Initializes and cleans up state during application lifecycle."""
+    settings = get_settings()
+    if settings.environment.lower() == "production" and not settings.api_key:
+        raise RuntimeError(
+            "Production mode (ENVIRONMENT=production) requires API_KEY to be configured for security."
+        )
+    if settings.require_api_key and not settings.api_key:
+        raise RuntimeError("REQUIRE_API_KEY is true, but API_KEY is empty or not configured.")
+    if not settings.api_key:
+        logger.warning(
+            "[SECURITY NOTICE] Running without API_KEY. All /chat endpoints are publicly accessible."
+        )
+    settings.validate_runtime_keys(strict=settings.environment.lower() == "production")
+    if not settings.trusted_proxies:
+        logger.warning(
+            "[SECURITY NOTICE] TRUSTED_PROXIES is empty. Rate limiting ignores X-Forwarded-For headers to prevent spoofing."
+        )
+
+    if not settings.checkpoint_db and not settings.allow_in_memory_checkpoints:
+        raise RuntimeError(
+            "CHECKPOINT_DB must be set in production, or set ALLOW_IN_MEMORY_CHECKPOINTS=true for ephemeral testing."
+        )
+
+    # Warm up AI and embedding models in a worker thread to avoid cold starts
+    await asyncio.to_thread(warm_up_clients)
+
+    # Build the correct checkpointer and compile the agent graph ONCE at startup.
+    if settings.postgres_url:
+        try:
+            from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+
+            async with AsyncPostgresSaver.from_conn_string(
+                settings.postgres_url
+            ) as pg_checkpointer:
+                await pg_checkpointer.setup()
+                app.state.agent_app = create_agent(checkpointer=pg_checkpointer)
+                logger.info("Agentic-RAG startup complete (PostgreSQL checkpointer).")
+                yield
+                logger.info("Agentic-RAG shutdown complete (PostgreSQL).")
+        except Exception as pg_err:
+            logger.warning("[Postgres Checkpointer] Fallback due to: %s", pg_err)
+            app.state.agent_app = create_agent()
+            yield
+    elif settings.checkpoint_db:
+        import aiosqlite
+        from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
+
+        async with aiosqlite.connect(settings.checkpoint_db) as conn:
+            checkpointer = AsyncSqliteSaver(conn)
+            app.state.agent_app = create_agent(checkpointer=checkpointer)
+
+            logger.info(
+                "Agentic-RAG backend startup complete (SQLite checkpointer: %s).",
+                settings.checkpoint_db,
+            )
+            yield
+            logger.info("Agentic-RAG backend shutdown complete (SQLite connection closed).")
+    else:
+        app.state.agent_app = create_agent()
+        logger.info("Agentic-RAG backend startup complete (in-memory checkpointer).")
+        yield
+        logger.info("Agentic-RAG backend shutdown complete.")
+
+
+# Initialize FastAPI application with lifespan handler
+app = FastAPI(
+    title="Agentic-RAG API",
+    description="Hardened, production-ready FastAPI backend with rate limiting, async concurrency, and streaming",
+    version="1.0.0",
+    lifespan=lifespan,
+)
+
+# Attach rate limiter to application state and exception handler
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)  # type: ignore[arg-type]
+
+
+# Lazy CORS Middleware to avoid importing/reading settings on module load
+class LazyCORSMiddleware(CORSMiddleware):
+    """CORS middleware that dynamically resolves allowed origins from settings per request."""
+
+    def __init__(self, inner_app, **kwargs):
+        super().__init__(
+            inner_app,
+            allow_origins=[],
+            allow_credentials=True,
+            allow_methods=["GET", "POST", "OPTIONS"],
+            allow_headers=["*"],
+            **kwargs,
+        )
+        self.preflight_explicit_allow_origin = True
+
+    def is_allowed_origin(self, origin: str) -> bool:
+        return origin in get_settings().allowed_origins
+
+
+app.add_middleware(LazyCORSMiddleware)  # type: ignore[arg-type]
+
+
+def get_current_agent():
+    """Retrieve compiled agent graph from application state.
+
+    Raises RuntimeError if called before the lifespan has initialised the app
+    (e.g. in a test that bypasses the lifespan).  Tests that need the agent
+    should supply their own via ``monkeypatch``.
+    """
+    agent = getattr(app.state, "agent_app", None)
+    if agent is None:
+        raise RuntimeError(
+            "Agent application is not initialised. "
+            "Ensure the FastAPI lifespan has started before calling this function."
+        )
+    return agent
+
+
+def clean_thread_id(raw_thread_id: str | None) -> str:
+    """Validates thread_id and generates uuid if empty. Rejects invalid characters with 422."""
+    if not raw_thread_id or not raw_thread_id.strip():
+        return str(uuid.uuid4())
+    cleaned = raw_thread_id.strip()
+    if not re.match(r"^[a-zA-Z0-9_\-]{1,128}$", cleaned):
+        raise HTTPException(
+            status_code=422,
+            detail="Invalid thread_id format. Must contain only alphanumeric characters, hyphens, and underscores (max 128 chars).",
+        )
+    return cleaned
+
+
+@app.get("/")
+def root():
+    """Root endpoint for status check and service discovery."""
+    return {
+        "status": "online",
+        "service": "Agentic-RAG Customer Support Backend",
+        "docs": "/docs",
+        "health": "/health",
+        "kb_info": "/kb/info",
+    }
+
+
+@app.get("/health")
+def health_check():
+    """Health status probe for monitoring and load balancers."""
+    from agenticrag.telemetry.metrics import get_provider_metrics
+
+    metrics = get_provider_metrics()
+    retriever_instance = get_retriever()
+    return {
+        "status": "ok",
+        "service": "Agentic-RAG Backend",
+        "retriever_connected": retriever_instance is not None,
+        "provider_failures": metrics["provider_failures"],
+    }
+
+
+@app.get("/health/detailed")
+@limiter.limit("30/minute")
+def detailed_health_check(request: Request, _auth: str | None = Depends(verify_api_key)):
+    """Protected health and observability probe exposing per-provider telemetry and recent execution spans."""
+    from agenticrag.telemetry.metrics import get_provider_metrics
+    from agenticrag.telemetry.telemetry import get_telemetry_collector
+
+    metrics = get_provider_metrics()
+    telemetry = get_telemetry_collector().get_summary()
+    retriever_instance = get_retriever()
+
+    return {
+        "status": metrics["status"],
+        "service": "Agentic-RAG Backend",
+        "retriever_connected": retriever_instance is not None,
+        "provider_metrics": metrics,
+        "telemetry_summary": telemetry,
+    }
+
+
+@app.get("/kb/info")
+@limiter.limit("30/minute")
+def kb_info_endpoint(request: Request, _auth: str | None = Depends(verify_api_key)):
+    """Returns knowledge base vector store metadata and index status."""
+    settings = get_settings()
+    retriever_instance = get_retriever()
+    return {
+        "index_name": settings.index_name,
+        "namespace": settings.namespace,
+        "embedding_model": settings.embedding_model,
+        "dimension": EMBEDDING_DIM,
+        "sample_size": settings.kb_sample_size,
+        "retriever_k": RETRIEVER_K,
+        "dataset": DATASET_NAME,
+        "retriever_connected": retriever_instance is not None,
+    }
+
+
+@app.post("/kb/search")
+@limiter.limit("30/minute")
+def kb_search_endpoint(
+    request: Request,
+    body: KBSearchRequest,
+    _auth: str | None = Depends(verify_api_key),
+    user: AuthenticatedUser = Depends(get_authenticated_user),
+):
+    """Direct vector search endpoint with tenant isolation, rate limiting, and authentication."""
+    retriever_instance = get_retriever()
+    if not retriever_instance:
+        raise HTTPException(
+            status_code=503, detail="Knowledge base retriever is temporarily unavailable."
+        )
+    try:
+        tenant_namespace = get_tenant_namespace(user.tenant_id)
+        docs = retriever_instance.invoke(body.query)
+        return {
+            "query": body.query,
+            "tenant_id": user.tenant_id,
+            "namespace": tenant_namespace,
+            "results": [{"content": doc.page_content, "metadata": doc.metadata} for doc in docs],
+        }
+    except Exception as e:
+        logger.error("[KBSearch Error]: %s", e, exc_info=True)
+        raise HTTPException(
+            status_code=500, detail="Failed to execute search in knowledge base."
+        ) from e
+
+
+@app.post("/chat", response_model=ChatResponse)
+@limiter.limit(lambda: get_settings().rate_limit)
+async def chat_endpoint(
+    request: Request,
+    body: ChatRequest,
+    _auth: str | None = Depends(verify_api_key),
+    user: AuthenticatedUser = Depends(get_authenticated_user),
+):
+    """Chat endpoint returning direct JSON response with tenant and thread isolation."""
+    thread_id = clean_thread_id(body.thread_id)
+    # Enforce thread ownership and tenant isolation
+    get_tenancy_manager().verify_thread_access(
+        thread_id=thread_id, tenant_id=user.tenant_id, user_id=user.user_id
+    )
+
+    from agenticrag.retrieval.cache import get_response_cache
+
+    agent_app = get_current_agent()
+    config = {"configurable": {"thread_id": thread_id}}
+
+    # Inspect checkpoint history to determine if this is the first turn
+    prior_messages: list[Any] = []
+    try:
+        current_state = await agent_app.aget_state(config)
+        if current_state and current_state.values:
+            prior_messages = current_state.values.get("messages", [])
+    except Exception as state_err:
+        logger.debug(
+            "[State Inspection] Unable to retrieve state for thread %s: %s", thread_id, state_err
+        )
+
+    from agenticrag.security.security import (
+        filter_canary_and_leaks,
+        redact_pii_with_mapping,
+        restore_pii_mapping,
+    )
+
+    # Redact PII at ingress before passing to LLM, checkpointing, or cache lookup
+    sanitized_message, pii_mapping = redact_pii_with_mapping(body.message)
+
+    is_first_turn = len(prior_messages) == 0
+
+    if is_first_turn:
+        cached = get_response_cache().get(
+            query=sanitized_message,
+            tenant_id=user.tenant_id,
+            kb_version=get_settings().kb_version,
+        )
+        if cached:
+            logger.info("[Cache Hit] Returning cached response for thread_id=%s", thread_id)
+            # Append Human + AI messages to checkpoint so subsequent turns see conversation history
+            try:
+                await agent_app.aupdate_state(
+                    config,
+                    {
+                        "messages": [
+                            HumanMessage(content=sanitized_message),
+                            AIMessage(content=cached["response"]),
+                        ],
+                        "tenant_id": user.tenant_id,
+                        "source_used": "cached_kb",
+                        "pii_mapping": pii_mapping,
+                    },
+                )
+            except Exception as update_err:
+                logger.warning(
+                    "[Cache Update State] Failed to update checkpoint state on cache hit: %s",
+                    update_err,
+                )
+
+            cached_resp = cached["response"]
+            if pii_mapping:
+                cached_resp = restore_pii_mapping(cached_resp, pii_mapping)
+
+            return ChatResponse(
+                response=cached_resp,
+                thread_id=thread_id,
+                source_used="cached_kb",
+                ticket_payload=cached.get("ticket_payload"),
+                sources=cached.get("sources"),
+            )
+
+    try:
+        result = await agent_app.ainvoke(
+            {
+                "messages": [HumanMessage(content=sanitized_message)],
+                "tenant_id": user.tenant_id,
+                "pii_mapping": pii_mapping,
+            },
+            config=config,
+        )
+
+        messages = result.get("messages", [])
+        if not messages:
+            raise HTTPException(status_code=500, detail="No response could be generated.")
+
+        last_message = messages[-1]
+        raw_content = (
+            last_message.content if hasattr(last_message, "content") else str(last_message)
+        )
+        answer_content = filter_canary_and_leaks(str(raw_content), pii_mapping=pii_mapping)
+        source = result.get("source_used", "unknown")
+        ticket_payload = result.get("ticket_payload")
+        kb_docs = result.get("kb_docs", [])
+        sources = (
+            [
+                {
+                    "doc_id": doc.metadata.get("id") or doc.metadata.get("doc_id") or f"doc-{idx}",
+                    "intent": doc.metadata.get("intent", "general"),
+                    "score": doc.metadata.get("score")
+                    or doc.metadata.get("similarity_score")
+                    or 0.0,
+                    "content": doc.page_content[:200],
+                }
+                for idx, doc in enumerate(kb_docs)
+            ]
+            if kb_docs
+            else None
+        )
+
+        chat_resp = ChatResponse(
+            response=str(answer_content),
+            thread_id=thread_id,
+            source_used=source,
+            ticket_payload=ticket_payload,
+            sources=sources,
+        )
+
+        if is_first_turn and source in ("private_kb", "direct", "out_of_scope_refusal"):
+            get_response_cache().set(
+                query=sanitized_message,
+                response_data={
+                    "response": chat_resp.response,
+                    "source_used": chat_resp.source_used,
+                    "sources": chat_resp.sources,
+                    "ticket_payload": chat_resp.ticket_payload,
+                },
+                tenant_id=user.tenant_id,
+                kb_version=get_settings().kb_version,
+            )
+
+        return chat_resp
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("[API Error] /chat failed: %s", e, exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail="An error occurred while processing your request. Please try again later.",
+        ) from e
+
+
+@app.post("/chat/stream")
+@limiter.limit(lambda: get_settings().rate_limit)
+async def chat_stream_endpoint(
+    request: Request,
+    body: ChatRequest,
+    _auth: str | None = Depends(verify_api_key),
+    user: AuthenticatedUser = Depends(get_authenticated_user),
+):
+    """Direct Server-Sent Events streaming endpoint with rate limits and tenant isolation."""
+    thread_id = clean_thread_id(body.thread_id)
+    # Enforce thread ownership and tenant isolation
+    get_tenancy_manager().verify_thread_access(
+        thread_id=thread_id, tenant_id=user.tenant_id, user_id=user.user_id
+    )
+    return StreamingResponse(
+        stream_agent_generator(
+            body.message,
+            thread_id,
+            agent_app=get_current_agent(),
+            request=request,
+            tenant_id=user.tenant_id,
+        ),
+        media_type="text/event-stream",
+    )
